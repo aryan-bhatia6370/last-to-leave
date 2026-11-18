@@ -52,9 +52,12 @@ export async function renderHome(outlet) {
       <section class="board home-cta">
         <div>
           <h2>Competition Mode</h2>
-          <p>Sit at the table with up to 7 computer players. Paul runs a game each round, the lowest score leaves, and the last one sitting wins.</p>
+          <p>Sit at the table with computer players or host a room for your friends. Paul runs a game each round, the lowest score leaves, and the last one sitting wins.</p>
         </div>
-        <a class="btn btn-primary" href="#/compete">Play Last to Leave</a>
+        <div class="btn-row cta-buttons">
+          <a class="btn btn-primary" href="#/compete">Play vs computers</a>
+          <a class="btn" href="#/online">Play online with friends</a>
+        </div>
       </section>
       <section class="board">
         <div class="section-heading">

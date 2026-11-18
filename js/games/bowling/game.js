@@ -27,6 +27,9 @@ const GOOD = '#1f9d4c';
 const BAD = '#d7263d';
 
 export function createBowling(container, host) {
+  // Online watching: st is copied from the player's live feed, nothing is simulated here.
+  const spectate = host.options?.spectate || null;
+  const mirrorIn = () => { const s = spectate.frame(); if (s) Object.assign(st, s); };
   const { options = {}, seed, debug = false, onFinish } = host;
   const C = CONFIG;
   const W = C.world;
@@ -518,7 +521,7 @@ export function createBowling(container, host) {
 
   if (hard) placeHardAll(); else placeRegular();
   for (const m of st.markers) m.pop = 1;
-  const loop = startLoop({ update, render });
+  const loop = startLoop({ update: spectate ? mirrorIn : update, render });
 
   if (debug) {
     window.__bowling = {
@@ -529,6 +532,7 @@ export function createBowling(container, host) {
   }
 
   return {
+    state: () => st, // for live spectating
     start() {
       if (st.phase !== 'ready') return;
       beginReset(true);

@@ -6,7 +6,9 @@ import { GAMES } from '../games/registry.js';
 import { variantToOptions } from './engine.js';
 import { DEBUG, escapeHtml, ensureFonts } from '../core/env.js';
 
-export async function playTurn(root, { gameId, variant, seed, extra = {}, banner = '' }) {
+// online: no pausing (others are waiting / racing); onInstance(instance) lets the
+// caller read the live game state for spectators.
+export async function playTurn(root, { gameId, variant, seed, extra = {}, banner = '', online = false, onInstance = null }) {
   const entry = GAMES.find((g) => g.id === gameId);
   const [mod] = await Promise.all([entry.load(), ensureFonts()]);
   const def = mod.default;
@@ -18,7 +20,7 @@ export async function playTurn(root, { gameId, variant, seed, extra = {}, banner
     wrap.innerHTML = `
       <div class="stage-canvas"></div>
       ${banner ? `<div class="turn-banner">${escapeHtml(banner)}</div>` : ''}
-      <button class="btn btn-small stage-pause" aria-label="Pause" data-pause><span class="pause-icon" aria-hidden="true"></span></button>
+      ${online ? '' : '<button class="btn btn-small stage-pause" aria-label="Pause" data-pause><span class="pause-icon" aria-hidden="true"></span></button>'}
       <div class="overlay" hidden></div>`;
     root.appendChild(wrap);
     const overlay = wrap.querySelector('.overlay');
@@ -36,6 +38,7 @@ export async function playTurn(root, { gameId, variant, seed, extra = {}, banner
       },
     });
 
+    onInstance?.(instance);
     const show = (html, cls = '') => { overlay.className = `overlay ${cls}`.trim(); overlay.innerHTML = html; overlay.hidden = false; };
     const hide = () => { overlay.hidden = true; overlay.innerHTML = ''; };
 
@@ -46,7 +49,7 @@ export async function playTurn(root, { gameId, variant, seed, extra = {}, banner
     }
 
     function pause() {
-      if (state !== 'playing') return;
+      if (state !== 'playing' || online) return;
       state = 'paused';
       instance.pause();
       show(`<div class="board panel"><h2>Paused</h2><p class="kicker">${escapeHtml(def.name)}</p>
@@ -64,7 +67,7 @@ export async function playTurn(root, { gameId, variant, seed, extra = {}, banner
     window.addEventListener('keydown', onKey);
     document.addEventListener('visibilitychange', onVis);
     window.addEventListener('blur', pause);
-    wrap.querySelector('[data-pause]').addEventListener('click', pause);
+    wrap.querySelector('[data-pause]')?.addEventListener('click', pause);
 
     function cleanup(result) {
       timers.forEach(clearTimeout);
@@ -79,4 +82,31 @@ export async function playTurn(root, { gameId, variant, seed, extra = {}, banner
     if (DEBUG) window.__turn = { instance, def, finish: (r) => { if (!done) { done = true; cleanup(r); } } };
     countdown();
   });
+}
+
+/**
+ * Watch another player's turn live (online rooms): the same game, drawn from
+ * their streamed state. Input is off. Returns { destroy }.
+ */
+export async function watchTurn(root, { gameId, variant, seed, receiver, banner = '', onBack = null }) {
+  const entry = GAMES.find((g) => g.id === gameId);
+  const [mod] = await Promise.all([entry.load(), ensureFonts()]);
+  const def = mod.default;
+  const wrap = document.createElement('div');
+  wrap.className = 'stage comp-turn watching';
+  wrap.innerHTML = `
+    <div class="stage-canvas"></div>
+    <div class="turn-banner">${escapeHtml(banner)}</div>
+    <div class="watch-wait" data-wait>Waiting for their game to start…</div>
+    ${onBack ? '<button class="btn btn-small comp-quit" data-back>Back to the table</button>' : ''}`;
+  root.appendChild(wrap);
+  const instance = def.create(wrap.querySelector('.stage-canvas'), {
+    options: { ...variantToOptions(variant), spectate: receiver }, seed, debug: false, onFinish: () => {},
+  });
+  const wait = wrap.querySelector('[data-wait]');
+  const poll = setInterval(() => { if (receiver.hasFrames) { wait.remove(); clearInterval(poll); } }, 200);
+  wrap.querySelector('[data-back]')?.addEventListener('click', () => onBack());
+  return {
+    destroy() { clearInterval(poll); instance.destroy(); wrap.remove(); },
+  };
 }

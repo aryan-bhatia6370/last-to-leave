@@ -49,6 +49,9 @@ const INK = '#1f1f22';
 const MISS_RED = '#d7263d';
 
 export function createMarkerCatching(container, host) {
+  // Online watching: st is copied from the player's live feed, nothing is simulated here.
+  const spectate = host.options?.spectate || null;
+  const mirrorIn = () => { const s = spectate.frame(); if (s) Object.assign(st, s); };
   const { options = {}, seed, debug = false, onFinish } = host;
   const bullet = !!options.bullet;
   const endless = !!options.endless;
@@ -762,7 +765,8 @@ export function createMarkerCatching(container, host) {
     last = now;
     const dt = Math.min(rawDt, 1 / 30);
     if (rawDt > 0) st.fps = lerp(st.fps, 1 / rawDt, 0.05);
-    if (!st.paused) {
+    if (spectate) mirrorIn();
+    else if (!st.paused) {
       update(dt);
       updateFx(dt);
     }
@@ -780,6 +784,7 @@ export function createMarkerCatching(container, host) {
   }
 
   return {
+    state: () => st, // for live spectating
     start() {
       if (st.phase !== 'ready') return;
       beginThrow();

@@ -54,6 +54,14 @@
   - **Minigames:** total, offline, online wins. A minigame win = passing a minigame played solo, OR the top score in a Competition round (ties for top count, tie-break replays don't; in Pictionary/Equations races = first to solve board 1).
   - **Offline Competition counts only with 3+ players at the table (you + 2 computers)**, matching online's 3+ real players.
   - Firestore `boards/{period~kind}/entries/{uid}`; rules allow counters only +1, endless bests only up (cap 5000), no online boards yet. Delete fake entries in the console (console bypasses rules).
+- **Online rooms (Phase 10, built 2026-11-18; tested with 1 real player + computers, not yet with 2+ real players):** `#/online` (host / join by code) and `#/room/:code`. Code in `js/online/`:
+  - `net.js` loads the Firebase **Realtime Database** (`databaseURL` in firebaseConfig.js; rules in `database.rules.json`, paste into Console → Realtime Database → Rules).
+  - `room.js`: rooms/{CODE} = meta, members, presence (auto-removed on disconnect), chars (one owner each), run, results, race, live. 5-char codes.
+  - `referee.js`: the **host's browser** runs the game as a state machine stored in `run` (intro → announce → turn/tie or race/raceNext → out → … → done), so if the host leaves, the next player (earliest joined, still connected) takes over. **Disconnected 60 s → a computer takes the seat.** Same rules/engine as offline. All players get the same seed per round.
+  - `page.js`: lobby (pick an untaken character, host sets computers 0–7 and versions) and the run view (reuses tableScene + playTurn). Online turns can't be paused.
+  - **Live spectating** (`mirror.js`): the player's game `st` is sent ~10×/s as JSON text to `live/{turnKey}`; watchers run the same game with `options.spectate = receiver`, which copies the blended state into `st` instead of simulating (each game has a 3-line hook + `state()` on its instance). About 1.3 KB per update.
+  - Races (Pictionary/Equations): every real player plays the board at once; reports `{solved, t}`; the host picks the fastest (computer times are simulated), with a 4 s grace for late reports.
+  - `performance.js`: each round 0–100 = percentile vs an average simulated player for that game/version (races: solve time; never solved = 0); run score = average, one decimal. Online leaderboards (3+ real players) are written at the end of the run by each player (`recordOnlineRun`).
 - **Build order:** Phase 8 = Competition Mode solo vs computers. Phase 9 = Google accounts + cloud scores (Firebase; the user creates the Firebase project in their own Google account and Claude walks them through it). Phase 10 = online rooms with live spectating.
 
 ## Phase plan
@@ -71,7 +79,7 @@
    - Still to do in theming: lore, Members, sounds, inside jokes, and (optionally) a lifelike rigged human model for Paul. Ask the user before downloading any model asset.
 8. **Competition Mode** ✅ solo vs computers (see the rules above). Final Rounds come later.
 9. Google accounts + usernames + cloud scores + leaderboards (Firebase) ✅
-10. Online play with friends
+10. Online rooms with live spectating ✅ (needs a playtest with 2+ real players)
 
 Build one phase at a time and stop for the user to playtest after each.
 
@@ -99,6 +107,7 @@ js/games/<game>/config.js  ALL tunable numbers for that game
 js/games/<game>/game.js    the game
 js/games/<game>/index.js   game definition (name, how-to, options, variants)
 js/pages/                  home, records, draw (Pictionary drawing board)
+js/online/                  online rooms: net (Realtime DB), room, referee (host), page, mirror (live spectating), performance
 js/three/                  realistic 3D layer (Three.js via import map in index.html): stage, courtyard, textures, props (markers, picnic table, solo cup, eraser, foam pieces, handheld board, marker pool, pose helpers), paul3d, boardStage
 ```
 

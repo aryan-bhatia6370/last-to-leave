@@ -9,4 +9,5 @@ export const FIREBASE_CONFIG = {
   storageBucket: 'last-to-leave-207b8.firebasestorage.app',
   messagingSenderId: '1043411694493',
   appId: '1:1043411694493:web:5185a772f7f77268ee7574',
+  databaseURL: 'https://last-to-leave-207b8-default-rtdb.firebaseio.com',
 };

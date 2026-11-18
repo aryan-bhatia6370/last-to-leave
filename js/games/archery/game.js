@@ -28,6 +28,9 @@ const MISS_RED = '#d7263d';
 const HIT_GREEN = '#1f9d4c';
 
 export function createArchery(container, host) {
+  // Online watching: st is copied from the player's live feed, nothing is simulated here.
+  const spectate = host.options?.spectate || null;
+  const mirrorIn = () => { const s = spectate.frame(); if (s) Object.assign(st, s); };
   const { options = {}, seed, debug = false, onFinish } = host;
   const C = CONFIG;
   const W = C.world;
@@ -685,7 +688,8 @@ export function createArchery(container, host) {
     last = now;
     const dt = Math.min(rawDt, 1 / 30);
     if (rawDt > 0) st.fps = lerp(st.fps, 1 / rawDt, 0.05);
-    if (!st.paused) {
+    if (spectate) mirrorIn();
+    else if (!st.paused) {
       update(dt);
       popups.update(dt);
     }
@@ -704,6 +708,7 @@ export function createArchery(container, host) {
   }
 
   return {
+    state: () => st, // for live spectating
     start() {
       if (st.phase !== 'ready') return;
       beginSetup(true);

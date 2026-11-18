@@ -665,3 +665,31 @@ a.game-card:hover, a.game-card:focus-visible {
 .lb-list .who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-list .val { font-weight: 800; font-variant-numeric: tabular-nums; }
 .leaderboards .sub { color: var(--text-soft); margin: 0 0 0.6em; }
+
+/* ---------- Online rooms ---------- */
+.cta-buttons { justify-content: flex-start; }
+.online-home .join-form { display: flex; gap: 10px; align-items: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.online-home .join-form .field { flex: 1 1 160px; display: flex; flex-direction: column; gap: 6px; }
+.online-home .join-form .field span { font-weight: 700; }
+.online-home .join-form input { font-size: 1.3rem; letter-spacing: 0.2em; text-transform: uppercase; }
+.online-home .join-form .btn-big { width: auto; flex: 0 0 auto; }
+.room-code { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 2px 0 22px; }
+.room-code span { font-size: clamp(2.2rem, 8vw, 3.2rem); font-weight: 900; letter-spacing: 0.18em; color: #fff; }
+.lobby-list { list-style: none; padding: 0; margin: 0 0 22px; display: grid; gap: 6px; }
+.lobby-list li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); }
+.lobby-list li .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--seat); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); }
+.lobby-list li.away { opacity: 0.5; }
+.lobby-list .muted { margin-left: auto; font-size: 0.88rem; }
+.tag { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #fff; }
+.char-card small { margin-left: auto; color: var(--text-faint); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 7em; }
+.char-card:disabled { opacity: 0.45; cursor: not-allowed; }
+.readonly { opacity: 0.6; }
+.room-tag { margin: 10px 0 0; color: var(--text-faint); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; }
+.watching .stage-canvas { pointer-events: none; }
+.watch-wait {
+  position: absolute; inset: 0; display: grid; place-items: center; z-index: 3; pointer-events: none;
+  color: #fff; font-weight: 800; font-size: 1.2rem; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.shake { animation: shake 0.25s 2; }
+.watching .comp-quit { top: auto; left: auto; bottom: max(14px, env(safe-area-inset-bottom)); right: max(14px, env(safe-area-inset-right)); }

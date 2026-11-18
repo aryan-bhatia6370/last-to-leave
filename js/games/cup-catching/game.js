@@ -29,6 +29,9 @@ const BAD = '#d7263d';
 const WARN = '#c46a00';
 
 export function createCupCatching(container, host) {
+  // Online watching: st is copied from the player's live feed, nothing is simulated here.
+  const spectate = host.options?.spectate || null;
+  const mirrorIn = () => { const s = spectate.frame(); if (s) Object.assign(st, s); };
   const { options = {}, seed, debug = false, onFinish } = host;
   const C = CONFIG;
   const P = C.throws;
@@ -558,7 +561,7 @@ export function createCupCatching(container, host) {
   }
 
   // ---------- start ----------
-  const loop = startLoop({ update, render });
+  const loop = startLoop({ update: spectate ? mirrorIn : update, render });
 
   if (debug) {
     window.__cupCatching = {
@@ -570,6 +573,7 @@ export function createCupCatching(container, host) {
   }
 
   return {
+    state: () => st, // for live spectating
     start() {
       if (st.phase !== 'ready') return;
       beginThrow();

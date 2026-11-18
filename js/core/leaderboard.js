@@ -14,8 +14,8 @@
 // - Competition win (offline): winning a run.
 // - Offline Competition only counts with 3+ players at the table (you + 2 computers),
 //   matching online's 3+ real players. Applies to both of the above.
-// - Online boards (3+ real people) and the run performance score (/100) arrive with
-//   online rooms (Phase 10). Performance is out of 100 with one decimal (e.g. 87.4).
+// - Online (rooms with 3+ real people): wins, rounds with the top score, and the run
+//   performance score (online/performance.js), stored x10 as an integer, shown /100 with one decimal.
 
 import { scores, onScoreSaved } from './scores.js';
 import { onAccount, loadFirebase, signedInHandles } from './account.js';
@@ -39,11 +39,11 @@ export const BOARDS = {
   'endless-cup': { label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
   'comp-wins': { label: 'Total wins', note: 'Offline + online', type: 'count', unit: 'wins' },
   'comp-wins-offline': { label: 'Offline wins', note: '3+ players at the table (you + 2 computers or more)', type: 'count', unit: 'wins' },
-  'comp-wins-online': { label: 'Online wins', note: 'Rooms with 3+ real players', type: 'count', unit: 'wins', soon: true },
-  'comp-performance': { label: 'Best performance', note: 'Whole-run score out of 100 (one decimal), online rooms with 3+ real players', type: 'best', unit: '/100', decimals: 1, soon: true },
+  'comp-wins-online': { label: 'Online wins', note: 'Online rooms with 3+ real players', type: 'count', unit: 'wins' },
+  'comp-performance': { label: 'Best performance', note: 'Whole-run score out of 100 (one decimal), online rooms with 3+ real players', type: 'best', unit: '/100', decimals: 1, scale: 10 },
   'mini-wins': { label: 'Total minigame wins', note: 'Offline + online', type: 'count', unit: 'wins' },
   'mini-wins-offline': { label: 'Offline minigame wins', note: 'Passing a minigame, or top score in a Competition round (3+ players)', type: 'count', unit: 'wins' },
-  'mini-wins-online': { label: 'Online minigame wins', note: 'Top score in a round, rooms with 3+ real players', type: 'count', unit: 'wins', soon: true },
+  'mini-wins-online': { label: 'Online minigame wins', note: 'Top score in a round (first to solve in races), online rooms with 3+ real players', type: 'count', unit: 'wins' },
 };
 
 // ---------- weeks ----------
@@ -93,12 +93,23 @@ export function recordCompetitionRoundWin(tableSize) {
   addWin(['mini-wins', 'mini-wins-offline']).catch(warn('round win'));
 }
 
+/**
+ * End of an online run with 3+ real players (the caller checks that):
+ * a win, the rounds where you had the top score, and your performance (/100, one decimal).
+ */
+export async function recordOnlineRun({ won, roundWins, performance }) {
+  if (won) await addWin(['comp-wins', 'comp-wins-online']).catch(warn('online win'));
+  for (let i = 0; i < roundWins; i++) await addWin(['mini-wins', 'mini-wins-online']).catch(warn('online round win'));
+  if (performance != null) await submitBest('comp-performance', Math.round(performance * 10), ['all', weekKey()]).catch(warn('performance'));
+}
+
 const endlessKind = (gameId, variant) =>
   Object.keys(BOARDS).find((k) => BOARDS[k].type === 'best' && BOARDS[k].game === gameId && BOARDS[k].variant === variant);
 
 // every saved result: solo passes, Competition wins, endless scores
 onScoreSaved((record) => {
   if (!signedInHandles() || DEBUG) return;
+  if (record.stats?.online) return; // online runs are counted by recordOnlineRun
   if (record.gameId === 'competition') {
     if (record.passed && (record.stats?.players ?? 0) >= LEADERBOARD.minCompetitionSeats) {
       addWin(['comp-wins', 'comp-wins-offline']).catch(warn('competition win'));

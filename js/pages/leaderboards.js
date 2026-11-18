@@ -9,7 +9,7 @@ const PREF_KEY = 'ltl.boards.v1';
 function loadPrefs() { try { return { tab: 'endless', period: 'week', ...JSON.parse(localStorage.getItem(PREF_KEY)) }; } catch { return { tab: 'endless', period: 'week' }; } }
 function savePrefs(p) { try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch { /* fine */ } }
 
-const fmtValue = (b, v) => (b.decimals ? Number(v).toFixed(b.decimals) : `${v}`);
+const fmtValue = (b, v) => (b.scale ? (v / b.scale).toFixed(b.decimals ?? 1) : `${v}`);
 
 export function renderLeaderboards(outlet, _params, { isCurrent }) {
   const prefs = loadPrefs();

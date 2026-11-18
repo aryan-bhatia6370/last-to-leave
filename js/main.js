@@ -8,6 +8,7 @@ import { renderAccount, startUsernameGate } from './pages/account.js';
 import { initAccounts } from './core/account.js';
 import './core/leaderboard.js'; // counts wins + endless scores for the boards
 import { renderLeaderboards } from './pages/leaderboards.js';
+import { renderOnline, renderRoom } from './online/page.js';
 
 createRouter(
   [
@@ -18,6 +19,8 @@ createRouter(
     { pattern: 'compete', render: renderCompete },
     { pattern: 'account', render: renderAccount },
     { pattern: 'leaderboards', render: renderLeaderboards },
+    { pattern: 'online', render: renderOnline },
+    { pattern: 'room/:code', render: renderRoom },
   ],
   document.getElementById('app'),
 ).start();
