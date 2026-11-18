@@ -1,0 +1,99 @@
+# Last to Leave — project rules
+
+**What this is:** a minigame website that adapts an improvised game show a few friends ran at a school table. Players survive challenges to be the *last to leave* the table. Everything traces back to real games, real objects (dry-erase markers, whiteboards, foam puzzle pieces, a red solo cup, Paul's khakis) and real inside jokes.
+
+## Fixed rules
+- **Name:** Last to Leave
+- **Marker colors (exactly 8):** black, red, blue, green, orange, brown, purple, pink. Single source of truth: `js/shared/colors.js` (CSS mirrors them as `--m-*` in `css/base.css`).
+- **Logo:** always written in **purple marker**.
+- **Markers are drawn one way everywhere:** `drawMarker()` / `markerSVG()` in `js/shared/marker.js` (2D icons) and `createMarker3D()` in `js/three/props.js` (3D).
+- **Look:** realistic, not cartoony. UI uses Inter on dark glass. Permanent Marker is only for the logo; Patrick Hand is for writing on whiteboards (Equations/Pictionary boards).
+- **Hosting:** static site on **GitHub Pages**, no server and no build step. Plain HTML/CSS/JS ES modules, hash routing (`#/…`), relative paths, `.nojekyll`. Three.js 0.170.0 loads from jsDelivr through the import map in `index.html` (only the 3D games import it). Firebase will be added later for online leaderboards.
+- **Devices:** optimize for PC first, but everything must work with touch and at phone width.
+
+## The games (menu order)
+| # | Game | Variants | Phase |
+|---|------|----------|-------|
+| 1 | Marker Catching | Regular, Bullet toggle, Endless toggle (can combine) | 1 ✅ |
+| 2 | Pictionary | 3 rounds, 40 s timer, wrong guess = −4 s; black marker draws the sketch live (40 built-in sketches + your own from the drawing board `#/draw`); fuzzy answer matching | 5 ✅ |
+| 3 | Equations | 3 rounds, 45 s timer, wrong = −5 s; board flips to reveal; 80% mental math / 17% algebra-geometry / 3% calculus | 5 ✅ |
+| 4 | Archery | Foam Nevada (green, large), Wyoming (purple, medium), Connecticut (red, small) thrown at a handheld classroom whiteboard that **Paul holds up**, somewhere new and sometimes angled every throw; Wind toggle | 2 ✅ (Paul added in 6) |
+| 5 | Bowling | Yellow-black eraser vs 3 standing markers (unique colors per game), 3 throws, max 9; Wind toggle; Hard mode (black=1, orange=2, purple=3 in separate spots; one throw scores at most 3); Hard and Wind combine | 3 ✅ |
+| 6 | Paul's Pocket | Pick 1 of 8 markers off the bench; Paul's hand (Caucasian, khaki trousers, arms/legs only) scoops them into his pocket, scrambles, pulls one out; 1-in-8 luck | 6 ✅ |
+| 7 | Cup Catching | Hold a red solo cup (follows mouse/finger) and catch lobbed markers through the top; rim bounces; whipping the cup sloshes markers out; Endless (ends on 3 misses in a row or a spill; cup gets crowded); no Bullet | 4 ✅ |
+| 8 | Cup Throwing | Throw all 8 markers into a standing cup; fixed cup or moving cup; thrown markers stay where they land; hardest game (~3/8 avg); **Paul holds the cup** at his hip (`cup.heldByPaul` in config; false = cup on the floor) | 3 ✅ |
+
+## The real setting (use this for theming)
+- **The table:** a square, perforated (expanded-metal) outdoor picnic table with four separate benches, one on each side, and a black tube frame. It's painted **dark purple, close to black**.
+- **Seating:** 2 people per bench, sitting **facing away from the table**. Paul stands out in front of them, running each game. So the player's first-person view looks *outward* from the bench toward Paul, with the table behind them.
+- Paul's Pocket already uses the dark purple perforated-metal bench in the foreground.
+
+## Privacy (the site is public)
+- Paul and the other Members are real people (teenagers). Use reference photos **only** as visual reference. Never copy them into the project, and never put real last names, the school's name, IDs or photos on the site. Paul's look: fair skin, short messy dark-brown hair, school uniform (white polo, navy lanyard + ID card, khaki trousers).
+
+## Phase plan
+1. Foundations + menu + whiteboard/marker style + **Marker Catching** ✅
+2. Shared flick-throw engine + Wind system + **Archery** ✅
+3. **Bowling** + **Cup Throwing** ✅
+4. **Cup Catching** ✅
+5. **Equations** + **Pictionary** (+ drawing recorder tool for authoring sketches) ✅
+6. **Paul's Pocket** + **the Paul model** ✅. Paul is the show's host: he walked around running the events while everyone sat at the table. `js/shared/paul.js` draws him (Caucasian, khaki trousers; shirt and hair colors are placeholders). He throws in Marker/Cup Catching, holds the handheld whiteboard in Archery, and holds the cup in Cup Throwing.
+7. Theming pass: lore, Members as characters, references/inside jokes, sound, art. **The user wants a much more realistic look, not cartoony/animated, and chose Three.js.**
+   - ✅ Shared 3D layer in `js/three/`: stage (Three.js camera matched exactly to each game's `cam`, so physics and hit-testing don't change), courtyard (sky, sun and shadows, concrete, stucco school building with a covered walkway), procedural textures, props (3D markers, the dark-purple perforated picnic table), realistic Paul.
+   - ✅ **All 8 games render in 3D.** The 3D catching/throwing games use `createStage3D` + `buildCourtyard`, with a `sync3D()` each frame that puts the 3D objects where the physics says. Equations and Pictionary use `three/boardStage.js` (Paul holds a real whiteboard whose sides are canvas textures; in Pictionary he draws with the marker, then erases). Paul's Pocket is a 3D close-up (he fans out the 8 markers; his hand really goes into the khaki pocket).
+   - The HUD (scores, clock, popups, badges, debug) stays 2D on a transparent canvas on top.
+   - ✅ **Menus and HUD restyled** to match: dark glass panels over a dark-purple perforated-metal backdrop (like the table), Inter for UI text, and a real 3D render of the table and Paul as the home page header (`three/heroShot.js`, rendered once and cached per session). In-game, `drawLabel` (shared/hud.js) uses the broadcast style (white bold sans, soft shadow) on the HUD canvas, and handwritten marker on whiteboard textures.
+   - Still to do in theming: lore, Members, sounds, inside jokes, and (optionally) a lifelike rigged human model for Paul. Ask the user before downloading any model asset.
+8. **Competition Mode** (elimination run; always starts and ends with Marker Catching or a variant) + Final Rounds
+9. Online leaderboards (Firebase), player identity
+10. Online play with friends
+
+Build one phase at a time and stop for the user to playtest after each.
+
+## Code layout
+```
+index.html, css/base.css
+js/main.js                 routes
+js/core/                   router, gameHost (shared game shell), scores, rng, canvas, input, env
+js/shared/                 colors, marker drawing, whiteboard/tray drawing, plus:
+  vec3.js                  vector math + easing
+  scene3d.js               first-person perspective camera, room background, 3D line/polygon drawing
+  throwing.js              createThrowControl (press-drag-flick input), flick tracker, flick -> launch velocity, projectile step with drag/wind, spin
+  wind.js                  per-throw wind, on-screen streaks, corner gauge (Archery, Bowling)
+  states.js                state puzzle-piece outlines (Nevada, Wyoming, Connecticut)
+  hud.js                   marker-style canvas text, popups, ✓/✗ badges, flick hint, debug box
+  objects3d.js             eraser (box), rod markers, red solo cup (+ clipping for markers inside), floor shadows
+  gameLoop.js              requestAnimationFrame loop with pause + FPS
+  thrower.js               Paul throwing markers (walk, wind-up styles) + throw solver
+  paul.js                  Paul's 3D figure (+ drawPaulHand for fingers wrapped in front of things)
+  answerBar.js             typed-answer bar + round clock (Equations, Pictionary)
+  boardScene.js            wall, big whiteboard, countdown, round badges (Equations, Pictionary)
+  mathText.js              handwritten math markup: ^ exponents, {a/b} fractions, √{n}, ∫
+js/games/registry.js       all 8 games: name, color, blurb, `variants` (every mode combo; the single source for game index.js + Records), `load`
+js/games/<game>/config.js  ALL tunable numbers for that game
+js/games/<game>/game.js    the game
+js/games/<game>/index.js   game definition (name, how-to, options, variants)
+js/pages/                  home, records, draw (Pictionary drawing board)
+js/three/                  realistic 3D layer (Three.js via import map in index.html): stage, courtyard, textures, props (markers, picnic table, solo cup, eraser, foam pieces, handheld board, marker pool, pose helpers), paul3d, boardStage
+```
+
+## Game contract (keep every game consistent; Competition Mode depends on it)
+A game's `index.js` default-exports `{ id, name, tagline, howTo, options, variants, statLabels, variant(opts), create(container, { options, seed, debug, onFinish }) }`.
+`create` returns `{ start, pause, resume, destroy }` and calls `onFinish(result)` exactly once with:
+```
+{ gameId, variant, score, maxScore /* null for endless */, passed, durationMs, stats, seed }
+```
+- `passed` uses the game's `passScore` from its `config.js`.
+- Randomness goes through `createRng(seed)` so runs can be replayed or shared later. Randomness that depends on what the player did (rim rattles, spills, how markers settle) uses a separate `luck` rng (seed ^ 0x9e3779b9). That way every player with the same seed gets identical throws, which online rooms need.
+- `gameHost.js` handles setup, countdown, pause (Esc / tab hidden), results and saving.
+
+## Scores
+- `js/core/scores.js`, async API: `submit`, `getBest`, `getBests`, `getHistory`, `clear`. The data lives in localStorage key `ltl.scores.v1` (`{ version, bests: {"game:variant": record}, history: [...] }`). The player name lives in `ltl.player.v1`.
+- For online leaderboards, add an adapter and call `setScoreAdapter()`. Games don't change.
+
+## Conventions
+- Durations, speeds, timers and difficulty go in the game's `config.js`, never inline.
+- `?debug=1` (before the `#`) turns on debug overlays (hitboxes, timing, FPS) and exposes `window.__<game>` hooks; throwing games have `step(seconds)` so tests can advance time without the animation loop (hidden browser panes don't run requestAnimationFrame).
+- Throwing games: power is measured in screen-heights/second so flicks feel the same on any screen. Check new throw tuning with a quick physics sweep: a person can repeat a flick speed to about ±15%, so a target should accept at least that much.
+- Preview locally: `python3 -m http.server 8000`, then open http://localhost:8000. ES modules don't load from `file://`.
+- Theming and lore are coming. Keep art in clearly named draw functions so it can be swapped (e.g. the gray placeholder thrower in Marker Catching becomes a Member).

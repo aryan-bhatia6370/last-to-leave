@@ -1,0 +1,14 @@
+# macOS folder metadata
+.DS_Store
+
+# local editor / tool settings (personal, not part of the site)
+.claude/settings.local.json
+.vscode/
+.idea/
+
+# never commit real photos of people (see CLAUDE.md "Privacy")
+reference-photos/
+*.heic
+
+# local tools (e.g. the GitHub CLI); not part of the site
+.tools/
