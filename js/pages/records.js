@@ -1,6 +1,9 @@
 import { GAMES } from '../games/registry.js';
 import { scores, formatScore, getPlayer, setPlayer } from '../core/scores.js';
 import { escapeHtml } from '../core/env.js';
+import { accountState, onAccount } from '../core/account.js';
+
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 
 function fmtDate(iso) {
   try {
@@ -15,6 +18,8 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
   const history = await scores.getHistory({ limit: 25 });
   if (!isCurrent()) return;
   const player = getPlayer();
+  const acct = accountState();
+  const signedIn = !!(acct.user && acct.profile);
 
   const variantLabel = (gameId, variant) =>
     defs.find((d) => d.id === gameId)?.variants.find((v) => v.id === variant)?.label ?? variant;
@@ -23,7 +28,7 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
   // Competition Mode: best run for each table size
   const compRows = [2, 3, 4, 5, 6, 7, 8].map((n) => {
     const b = bests[`competition:${n}p`];
-    return b ? `<tr><td>${n} players</td><td class="num">${b.passed ? 'Won' : `${b.stats?.place ?? '?'}th`}</td><td>${fmtDate(b.playedAt)}</td></tr>` : '';
+    return b ? `<tr><td>${n} players</td><td class="num">${b.passed ? 'Won' : ordinal(b.stats?.place ?? n - b.score)}</td><td>${fmtDate(b.playedAt)}</td></tr>` : '';
   }).join('');
   const compSection = compRows
     ? `<div class="records-game" style="--c: var(--m-purple)"><h2>Competition Mode</h2><div class="table-wrap"><table class="records-table"><thead><tr><th>Table</th><th>Best finish</th><th>When</th></tr></thead><tbody>${compRows}</tbody></table></div></div>`
@@ -64,14 +69,18 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
 
   outlet.innerHTML = `
     <main class="page records">
-      <nav class="topbar"><a class="btn btn-small" href="#/">← Menu</a></nav>
+      <nav class="topbar"><a class="btn btn-small" href="#/">← Menu</a><a class="btn btn-small" href="#/leaderboards">Leaderboards</a></nav>
       <section class="board">
         <h1>My Records</h1>
-        <p class="sub">Saved on this device only. Online leaderboards come in a later phase.</p>
+        ${signedIn
+          ? `<p class="sub">Signed in as <strong>${escapeHtml(acct.profile.username)}</strong>. Your best scores are saved to your account too.</p>`
+          : acct.enabled
+            ? `<p class="sub">Saved on this device only. <a href="#/account">Sign in</a> to keep them on every device.</p>`
+            : `<p class="sub">Saved on this device only.</p>
         <label class="name-field">
           <span>Your name</span>
           <input type="text" maxlength="20" autocomplete="nickname" placeholder="Who's playing?" value="${escapeHtml(player.name)}" data-name>
-        </label>
+        </label>`}
         ${compSection}
         ${perGame}
         <div class="records-game">
@@ -83,11 +92,26 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
     </main>`;
 
   const nameInput = outlet.querySelector('[data-name]');
-  nameInput.addEventListener('input', () => setPlayer({ ...getPlayer(), name: nameInput.value.trim() }));
+  nameInput?.addEventListener('input', () => setPlayer({ ...getPlayer(), name: nameInput.value.trim() }));
 
   outlet.querySelector('[data-clear]').addEventListener('click', async () => {
-    if (!confirm('Erase every saved score on this device? This cannot be undone.')) return;
+    const msg = signedIn
+      ? 'Erase the scores saved on this device? Your account keeps its best scores and brings them back next time you sign in.'
+      : 'Erase every saved score on this device? This cannot be undone.';
+    if (!confirm(msg)) return;
     await scores.clear();
     renderRecords(outlet, _params, { isCurrent });
+  });
+
+  // redraw once the account finishes loading, signs in/out, or syncs new bests
+  const seen = { ready: acct.ready, profile: acct.profile, sync: acct.lastSync };
+  let done = false;
+  const off = onAccount((s) => {
+    if (done) return;
+    if (!isCurrent()) { done = true; queueMicrotask(() => off()); return; }
+    if (s.ready !== seen.ready || s.profile !== seen.profile || s.lastSync !== seen.sync) {
+      done = true;
+      queueMicrotask(() => { off(); renderRecords(outlet, _params, { isCurrent }); });
+    }
   });
 }

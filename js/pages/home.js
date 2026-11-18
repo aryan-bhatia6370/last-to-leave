@@ -3,6 +3,8 @@ import { COLOR_BY_ID } from '../shared/colors.js';
 import { markerSVG } from '../shared/marker.js';
 import { scores, formatScore } from '../core/scores.js';
 import { escapeHtml } from '../core/env.js';
+import { mountAccountChip } from './account.js';
+import { accountState, onAccount } from '../core/account.js';
 
 export async function renderHome(outlet) {
   const bests = await scores.getBests();
@@ -38,6 +40,7 @@ export async function renderHome(outlet) {
     <main class="page home">
       <header class="hero">
         <img class="hero-shot" alt="" data-hero>
+        <div class="hero-account" data-account hidden></div>
         <h1 class="logo">
           Last to Leave
           <svg class="logo-underline" viewBox="0 0 400 24" preserveAspectRatio="none" aria-hidden="true">
@@ -56,15 +59,22 @@ export async function renderHome(outlet) {
       <section class="board">
         <div class="section-heading">
           <h2>Pick a game</h2>
-          <a href="#/records">My records →</a>
+          <span class="heading-links"><a href="#/leaderboards">Leaderboards</a> · <a href="#/records">My records →</a></span>
         </div>
         <div class="game-grid">${cards}</div>
       </section>
       <footer class="site-foot">
-        <a href="#/draw">Draw your own Pictionary prompts</a> · Scores are saved on this device only.
+        <a href="#/draw">Draw your own Pictionary prompts</a> · <span data-acct-note>${accountState().enabled ? 'Sign in to keep your scores on every device.' : 'Scores are saved on this device only.'}</span>
       </footer>
     </main>`;
   loadHeroShot(outlet.querySelector('[data-hero]'));
+  mountAccountChip(outlet.querySelector('[data-account]'));
+  const note = outlet.querySelector('[data-acct-note]');
+  const off = onAccount((s) => {
+    if (!note.isConnected) { queueMicrotask(() => off()); return; }
+    if (s.user && s.profile) note.textContent = 'Your best scores sync to your account.';
+    else if (s.enabled) note.textContent = 'Sign in to keep your scores on every device.';
+  });
 }
 
 // A real 3D render of the setting behind the logo. Rendered once, then kept

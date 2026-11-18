@@ -9,6 +9,7 @@ import { playTurn } from './playTurn.js';
 import { createRng, newSeed } from '../core/rng.js';
 import { DEBUG, escapeHtml, ensureFonts } from '../core/env.js';
 import { scores } from '../core/scores.js';
+import { recordCompetitionRoundWin } from '../core/leaderboard.js';
 
 const SETTINGS_KEY = 'ltl.compete.v1';
 const ABORT = Symbol('abort');
@@ -244,7 +245,7 @@ class Run {
     await this.finish(this.alive()[0]);
   }
 
-  async scored(game, variant, contenders, round) {
+  async scored(game, variant, contenders, round, replay = false) {
     const max = maxScoreFor(game.id);
     const fmt = (s) => (max != null ? `${s}/${max}` : `${s}`);
     const sorted = contenders.slice().sort((a, b) => a.seat - b.seat);
@@ -271,6 +272,9 @@ class Run {
       this.say(`${this.name(p.id)}: ${fmt(score)}`);
       await this.wait(p.human ? 900 : 650);
     }
+    // leaderboard: top score in a round (ties for top count; tie-break replays don't)
+    const me = contenders.find((p) => p.human);
+    if (me && !replay && results[me.id] >= Math.max(...Object.values(results))) recordCompetitionRoundWin(this.total);
     const low = lowestScorers(results);
     if (low.length === 1) return low[0];
     const list = low.map((id) => this.name(id));
@@ -282,7 +286,7 @@ class Run {
     await this.wait(2400);
     const tied = contenders.filter((p) => low.includes(p.id));
     const keep = { ...this.statusText };
-    const loser = await this.scored(game, variant, tied, round + 1);
+    const loser = await this.scored(game, variant, tied, round + 1, true);
     for (const id of Object.keys(keep)) if (keep[id] === 'SAFE') this.statusText[id] = 'SAFE';
     return loser;
   }
@@ -302,6 +306,7 @@ class Run {
         const r = await this.playHuman(game, variant, { compete: { racers: racers.map(({ name, at }) => ({ name, at })) } }, `Race · board ${board}`);
         const w = r.stats?.winner;
         winner = w === 'you' ? human.id : racers.find((x) => x.name === w)?.id;
+        if (w === 'you' && board === 1) recordCompetitionRoundWin(this.total); // first to solve = top score
         if (!winner) winner = racers.slice().sort((a, b) => a.at - b.at)[0]?.id ?? human.id;
       } else {
         this.say(`Board ${board}: Paul holds it up…`);
