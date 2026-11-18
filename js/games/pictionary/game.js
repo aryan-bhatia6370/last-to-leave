@@ -21,10 +21,14 @@ const INK = '#1f1f22';
 export function createPictionary(container, host) {
   const { options = {}, seed, onFinish } = host;
   const C = CONFIG;
+  // Competition Mode race: one board, computer players "solve" it at set times
+  // ({ racers: [{ name, at (seconds) }] }); the first correct answer wins it.
+  const compete = options.compete || null;
+  const ROUNDS = compete ? 1 : C.rounds;
   const rng = createRng(seed);
   const mine = !!options.mine;
   const pool = mine ? DRAWINGS.concat(loadMyDrawings()) : DRAWINGS;
-  const picks = rng.shuffle(pool).slice(0, C.rounds);
+  const picks = rng.shuffle(pool).slice(0, ROUNDS);
   const rounds = picks.map((d) => buildTimeline(d, toPolylines(d, rng)));
   const popups = createPopups();
 
@@ -41,6 +45,8 @@ export function createPictionary(container, host) {
     clock: createRoundClock(C.roundSeconds),
     flash: 0,
     activeSec: 0,
+    raceT: 0,
+    raceWinner: null,
     finished: false,
   };
 
@@ -82,6 +88,7 @@ export function createPictionary(container, host) {
     const verdict = judgeGuess(text, rounds[st.round].drawing);
     if (verdict === 'yes') {
       st.guessTimes.push(C.roundSeconds - st.clock.left);
+      st.raceWinner = 'you';
       endRound(true);
       return;
     }
@@ -99,6 +106,11 @@ export function createPictionary(container, host) {
   }
 
   function endRound(won, why) {
+    if (compete && !won && !st.raceWinner) {
+      const first = compete.racers.slice().sort((a, b) => a.at - b.at)[0];
+      st.raceWinner = first ? first.name : null;
+      if (first && why === "Time's up!") why = `${first.name} got it!`;
+    }
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.guessed++;
     st.drawT = rounds[st.round].end + 1; // finish the sketch
@@ -119,6 +131,14 @@ export function createPictionary(container, host) {
       case 'draw':
         st.drawT += dt;
         st.clock.tick(dt);
+        if (compete && st.phase === 'draw') {
+          st.raceT += dt;
+          const next = compete.racers.filter((r) => st.raceT >= r.at).sort((a, b) => a.at - b.at)[0];
+          if (next) {
+            st.raceWinner = next.name;
+            endRound(false, `${next.name} got it!`);
+          }
+        }
         if (st.clock.expired) endRound(false, "Time's up!");
         break;
       case 'reveal':
@@ -127,7 +147,7 @@ export function createPictionary(container, host) {
       case 'erase':
         if (k >= 1) {
           st.round++;
-          if (st.round >= C.rounds) setPhase('done', 0.2);
+          if (st.round >= ROUNDS) setPhase('done', 0.2);
           else startRound();
         }
         break;
@@ -139,10 +159,12 @@ export function createPictionary(container, host) {
             gameId: 'pictionary',
             variant: mine ? 'mine' : 'regular',
             score: st.guessed,
-            maxScore: C.rounds,
+            maxScore: ROUNDS,
             passed: st.guessed >= C.passScore,
             durationMs: Math.round(st.activeSec * 1000),
             stats: {
+              winner: st.raceWinner ?? null,
+              raceSeconds: Number((st.raceT || 0).toFixed(1)),
               guessed: st.guessed,
               wrong: st.wrong,
               avgSeconds: avg == null ? null : Number(avg.toFixed(1)),
@@ -232,7 +254,8 @@ export function createPictionary(container, host) {
     bs.pose({ flip: 0, penUV, eraseUV });
     bs.render();
     ctx.clearRect(0, 0, size.w, size.h);
-    drawRounds(ctx, size, 'GUESSED', st.guessed, C.rounds, st.results, st.round);
+    if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
+    else drawRounds(ctx, size, 'GUESSED', st.guessed, ROUNDS, st.results, st.round);
     if (st.phase === 'draw' || st.phase === 'reveal') drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
     popups.draw(ctx);
   }

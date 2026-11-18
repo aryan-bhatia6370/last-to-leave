@@ -1,8 +1,10 @@
-// Paul in 3D: the host. School uniform (white polo, navy lanyard + ID card,
-// khaki trousers, dark shoes), fair skin, short messy dark-brown hair.
-// Posed every frame from the same pose object the 2D drawPaul used:
-//   { x, z, floorY, yaw, walk, moving, leftHand, rightHand }  (game coordinates)
-// Hands are world positions; null = hanging at his side.
+// People in 3D. createPaul3D() is the host: school uniform (white polo, navy
+// lanyard + ID card, khaki trousers, dark shoes), fair skin, short messy
+// dark-brown hair. createPerson3D(look) makes anyone else (the Members use
+// placeholder looks until the user sends their pictures).
+// Posed every frame:
+//   { x, z, floorY, yaw, walk, moving, sit (0..1), leftHand, rightHand, bulge }  (game coordinates)
+// Hands are world positions; null = resting (at his side, or on his lap when seated).
 
 import * as THREE from 'three';
 import { paulRestHand } from '../shared/paul.js';
@@ -25,15 +27,26 @@ function elbowFor(shoulder, hand, out) {
   return [mid[0] + out[0] * bend * 0.6, mid[1] - bend * 0.45, mid[2] + out[2] * bend * 0.6 + bend * 0.25];
 }
 
+const lerpN = (a, b, t) => a + (b - a) * t;
+const lerpP = (a, b, t) => [lerpN(a[0], b[0], t), lerpN(a[1], b[1], t), lerpN(a[2], b[2], t)];
+
+export const PAUL_LOOK = { skin: 0xe9c4a6, shirt: 0xf1f1ec, pants: 0xbfa880, hair: 0x2f2219, shoe: 0x1f1f22, lanyard: true };
+
 export function createPaul3D() {
+  return createPerson3D(PAUL_LOOK);
+}
+
+/** look: { skin, shirt, pants, hair, shoe, lanyard (bool) } as 0xRRGGBB numbers */
+export function createPerson3D(look = PAUL_LOOK) {
+  const L0 = { ...PAUL_LOOK, lanyard: false, ...look };
   const group = new THREE.Group();
   const bump = weaveBump([6, 6]);
   const mats = {
-    skin: new THREE.MeshPhysicalMaterial({ color: 0xe9c4a6, roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color(0xffd9c2), sheenRoughness: 0.6 }),
-    polo: new THREE.MeshStandardMaterial({ color: 0xf1f1ec, roughness: 0.88, bumpMap: bump, bumpScale: 0.6 }),
-    khaki: new THREE.MeshStandardMaterial({ color: 0xbfa880, roughness: 0.92, bumpMap: bump, bumpScale: 0.5 }),
-    hair: new THREE.MeshStandardMaterial({ color: 0x2f2219, roughness: 0.72 }),
-    shoe: new THREE.MeshStandardMaterial({ color: 0x1f1f22, roughness: 0.45 }),
+    skin: new THREE.MeshPhysicalMaterial({ color: L0.skin, roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color(0xffd9c2), sheenRoughness: 0.6 }),
+    polo: new THREE.MeshStandardMaterial({ color: L0.shirt, roughness: 0.88, bumpMap: bump, bumpScale: 0.6 }),
+    khaki: new THREE.MeshStandardMaterial({ color: L0.pants, roughness: 0.92, bumpMap: bump, bumpScale: 0.5 }),
+    hair: new THREE.MeshStandardMaterial({ color: L0.hair, roughness: 0.72 }),
+    shoe: new THREE.MeshStandardMaterial({ color: L0.shoe, roughness: 0.45 }),
     belt: new THREE.MeshStandardMaterial({ color: 0x2a1e16, roughness: 0.5 }),
     lanyard: new THREE.MeshStandardMaterial({ color: 0x1f3a8a, roughness: 0.6 }),
     card: new THREE.MeshStandardMaterial({ color: 0xf6f6f6, roughness: 0.35 }),
@@ -78,16 +91,18 @@ export function createPaul3D() {
   const placket = mesh(new THREE.BoxGeometry(0.03, 0.12, 0.006), mats.polo, body);
   placket.position.set(0, 0.42, 0.118);
   // lanyard + ID card
-  for (const sx of [-1, 1]) {
+  for (const sx of (L0.lanyard ? [-1, 1] : [])) {
     const strap = mesh(cyl, mats.lanyard, body);
     strap.scale.set(0.006, 0.24, 0.006);
     strap.position.set(sx * 0.035, 0.38, 0.115);
     strap.rotation.z = sx * 0.14;
     strap.rotation.x = -0.12;
   }
-  const card = mesh(new THREE.BoxGeometry(0.054, 0.085, 0.003), mats.card, body);
-  card.position.set(0, 0.235, 0.128);
-  card.rotation.x = -0.08;
+  if (L0.lanyard) {
+    const card = mesh(new THREE.BoxGeometry(0.054, 0.085, 0.003), mats.card, body);
+    card.position.set(0, 0.235, 0.128);
+    card.rotation.x = -0.08;
+  }
   // neck + head
   const neck = mesh(cyl, mats.skin, body);
   neck.scale.set(0.046, 0.12, 0.046);
@@ -153,9 +168,12 @@ export function createPaul3D() {
   function at(m, p) { toThree(p, m.position); }
 
   function update(p) {
-    const swing = Math.sin(p.walk || 0) * 0.14 * (p.moving || 0);
-    const bob = Math.abs(Math.sin(p.walk || 0)) * 0.025 * (p.moving || 0);
-    toThree(toWorld(p, 0, H.belt + bob, 0), body.position);
+    const sit = p.sit || 0;
+    const swing = Math.sin(p.walk || 0) * 0.14 * (p.moving || 0) * (1 - sit);
+    const bob = Math.abs(Math.sin(p.walk || 0)) * 0.025 * (p.moving || 0) * (1 - sit);
+    const beltY = lerpN(H.belt, 0.6, sit) + bob; // seated: on a bench about 0.46 m high
+    group.visible = p.visible !== false;
+    toThree(toWorld(p, 0, beltY, 0), body.position);
     body.rotation.y = -(p.yaw || 0);
     const bg = p.bulge || 0;
     bulge.visible = bg > 0.02;
@@ -168,16 +186,16 @@ export function createPaul3D() {
     [-1, 1].forEach((side, i) => {
       const L = legs[i];
       const sw = side * swing;
-      const hip = toWorld(p, side * 0.095, H.hip + bob - 0.03, 0);
-      const knee = toWorld(p, side * 0.1, H.knee, sw * 0.5);
-      const ankle = toWorld(p, side * 0.105, H.ankle + 0.03, sw);
+      const hip = toWorld(p, side * 0.095, beltY - 0.06, 0.02 * sit);
+      const knee = lerpP(toWorld(p, side * 0.1, H.knee, sw * 0.5), toWorld(p, side * 0.1, 0.52, -0.42), sit);
+      const ankle = lerpP(toWorld(p, side * 0.105, H.ankle + 0.03, sw), toWorld(p, side * 0.11, 0.115, -0.47), sit);
       place(L.thigh, hip, knee);
       at(L.knee, knee);
       place(L.shin, knee, ankle);
       at(L.cuff, ankle);
       L.cuff.scale.set(0.064, 0.03, 0.064);
-      const heel = toWorld(p, side * 0.105, 0.045, sw + 0.05);
-      const toe = toWorld(p, side * 0.11, 0.045, sw - 0.14);
+      const heel = toWorld(p, side * 0.105, 0.045, sw + 0.05 - 0.47 * sit);
+      const toe = toWorld(p, side * 0.11, 0.045, sw - 0.14 - 0.47 * sit);
       toThree(heel, va);
       toThree(toe, vb);
       L.shoe.position.addVectors(va, vb).multiplyScalar(0.5);
@@ -185,10 +203,11 @@ export function createPaul3D() {
       L.shoe.scale.set(1, 1, 0.75);
     });
 
-    const hands = { 1: p.rightHand || paulRestHand(p, 1), '-1': p.leftHand || paulRestHand(p, -1) };
+    const rest = (side) => lerpP(paulRestHand(p, side), toWorld(p, side * 0.15, 0.62, -0.3), sit);
+    const hands = { 1: p.rightHand || rest(1), '-1': p.leftHand || rest(-1) };
     [-1, 1].forEach((side, i) => {
       const A = arms[i];
-      const shoulder = toWorld(p, side * 0.2, H.shoulder + bob, 0);
+      const shoulder = toWorld(p, side * 0.2, beltY + (H.shoulder - H.belt), 0);
       const hand = hands[side];
       const out = [toWorld(p, side, 0, 0)[0] - p.x, 0, toWorld(p, side, 0, 0)[2] - p.z];
       const elbow = elbowFor(shoulder, hand, out);

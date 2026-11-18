@@ -18,10 +18,14 @@ const GOOD = '#1f9d4c';
 const BAD = '#d7263d';
 
 export function createEquations(container, host) {
-  const { seed, onFinish } = host;
+  const { options = {}, seed, onFinish } = host;
   const C = CONFIG;
+  // Competition Mode race: one board, computer players "solve" it at set times
+  // ({ racers: [{ name, at (seconds) }] }); the first correct answer wins it.
+  const compete = options.compete || null;
+  const ROUNDS = compete ? 1 : C.rounds;
   const rng = createRng(seed);
-  const problems = makeProblems(rng, C.rounds, C.tierWeights);
+  const problems = makeProblems(rng, ROUNDS, C.tierWeights);
   const popups = createPopups();
 
   const st = {
@@ -37,6 +41,8 @@ export function createEquations(container, host) {
     flash: 0,
     lastGuess: '',
     activeSec: 0,
+    raceT: 0,
+    raceWinner: null,
     finished: false,
   };
 
@@ -63,6 +69,7 @@ export function createEquations(container, host) {
     const p = problems[st.round];
     if (isCorrect(text, p.answer)) {
       st.solveTimes.push(C.roundSeconds - st.clock.left);
+      st.raceWinner = 'you';
       endRound(true);
     } else {
       st.wrong++;
@@ -76,6 +83,11 @@ export function createEquations(container, host) {
   }
 
   function endRound(won, why) {
+    if (compete && !won && !st.raceWinner) {
+      const first = compete.racers.slice().sort((a, b) => a.at - b.at)[0];
+      st.raceWinner = first ? first.name : null;
+      if (first && why === "Time's up!") why = `${first.name} got it!`;
+    }
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.solved++;
     bar.setEnabled(false);
@@ -101,6 +113,14 @@ export function createEquations(container, host) {
         break;
       case 'solve':
         st.clock.tick(dt);
+        if (compete && st.phase === 'solve') {
+          st.raceT += dt;
+          const next = compete.racers.filter((r) => st.raceT >= r.at).sort((a, b) => a.at - b.at)[0];
+          if (next) {
+            st.raceWinner = next.name;
+            endRound(false, `${next.name} got it!`);
+          }
+        }
         if (st.clock.expired) endRound(false, "Time's up!");
         break;
       case 'reveal':
@@ -109,7 +129,7 @@ export function createEquations(container, host) {
       case 'flipOut':
         if (k >= 1) {
           st.round++;
-          if (st.round >= C.rounds) {
+          if (st.round >= ROUNDS) {
             setPhase('done', 0.2);
           } else {
             st.clock = createRoundClock(C.roundSeconds);
@@ -125,10 +145,12 @@ export function createEquations(container, host) {
             gameId: 'equations',
             variant: 'regular',
             score: st.solved,
-            maxScore: C.rounds,
+            maxScore: ROUNDS,
             passed: st.solved >= C.passScore,
             durationMs: Math.round(st.activeSec * 1000),
             stats: {
+              winner: st.raceWinner ?? null,
+              raceSeconds: Number((st.raceT || 0).toFixed(1)),
               solved: st.solved,
               wrong: st.wrong,
               avgSeconds: avg == null ? null : Number(avg.toFixed(1)),
@@ -194,7 +216,8 @@ export function createEquations(container, host) {
     bs.render();
     ctx.clearRect(0, 0, size.w, size.h);
     const p = problems[Math.min(st.round, problems.length - 1)];
-    drawRounds(ctx, size, 'SOLVED', st.solved, C.rounds, st.results, st.round);
+    if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
+    else drawRounds(ctx, size, 'SOLVED', st.solved, ROUNDS, st.results, st.round);
     if (st.phase === 'solve' || st.phase === 'reveal') drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
     if (p && (st.phase === 'solve' || st.phase === 'flipIn') && p.tier !== 'common') {
       const label = p.tier === 'veryRare' ? 'CALCULUS?!' : 'Bonus: algebra / geometry';

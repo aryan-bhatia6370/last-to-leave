@@ -46,6 +46,13 @@ export async function renderHome(outlet) {
         </h1>
         <p class="tagline">Minigames from the game show we ran at our school table. Survive every round and be the last one left.</p>
       </header>
+      <section class="board home-cta">
+        <div>
+          <h2>Competition Mode</h2>
+          <p>Sit at the table with up to 7 computer players. Paul runs a game each round, the lowest score leaves, and the last one sitting wins.</p>
+        </div>
+        <a class="btn btn-primary" href="#/compete">Play Last to Leave</a>
+      </section>
       <section class="board">
         <div class="section-heading">
           <h2>Pick a game</h2>

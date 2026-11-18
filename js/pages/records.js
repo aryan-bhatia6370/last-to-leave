@@ -18,7 +18,16 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
 
   const variantLabel = (gameId, variant) =>
     defs.find((d) => d.id === gameId)?.variants.find((v) => v.id === variant)?.label ?? variant;
-  const gameName = (gameId) => GAMES.find((g) => g.id === gameId)?.name ?? gameId;
+  const gameName = (gameId) => (gameId === 'competition' ? 'Competition Mode' : GAMES.find((g) => g.id === gameId)?.name ?? gameId);
+
+  // Competition Mode: best run for each table size
+  const compRows = [2, 3, 4, 5, 6, 7, 8].map((n) => {
+    const b = bests[`competition:${n}p`];
+    return b ? `<tr><td>${n} players</td><td class="num">${b.passed ? 'Won' : `${b.stats?.place ?? '?'}th`}</td><td>${fmtDate(b.playedAt)}</td></tr>` : '';
+  }).join('');
+  const compSection = compRows
+    ? `<div class="records-game" style="--c: var(--m-purple)"><h2>Competition Mode</h2><div class="table-wrap"><table class="records-table"><thead><tr><th>Table</th><th>Best finish</th><th>When</th></tr></thead><tbody>${compRows}</tbody></table></div></div>`
+    : '';
 
   const perGame = playable.map((g, i) => {
     const def = defs[i];
@@ -45,9 +54,9 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
         <thead><tr><th>Game</th><th>Mode</th><th>Score</th><th></th><th>When</th></tr></thead>
         <tbody>${history.map((r) => `<tr>
           <td>${escapeHtml(gameName(r.gameId))}</td>
-          <td>${escapeHtml(variantLabel(r.gameId, r.variant))}</td>
+          <td>${escapeHtml(r.gameId === 'competition' ? r.variant.replace('p', ' players') : variantLabel(r.gameId, r.variant))}</td>
           <td class="num">${formatScore(r.score, r.maxScore)}</td>
-          <td>${r.passed ? '<span class="pass-dot">survived</span>' : '<span class="fail-dot">out</span>'}</td>
+          <td>${r.gameId === 'competition' ? (r.passed ? '<span class="pass-dot">won</span>' : `<span class="fail-dot">${r.stats?.place ?? '?'} of ${r.stats?.players ?? '?'}</span>`) : r.passed ? '<span class="pass-dot">survived</span>' : '<span class="fail-dot">out</span>'}</td>
           <td>${fmtDate(r.playedAt)}</td>
         </tr>`).join('')}</tbody>
       </table></div>`
@@ -63,6 +72,7 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
           <span>Your name</span>
           <input type="text" maxlength="20" autocomplete="nickname" placeholder="Who's playing?" value="${escapeHtml(player.name)}" data-name>
         </label>
+        ${compSection}
         ${perGame}
         <div class="records-game">
           <h2>Recent games</h2>

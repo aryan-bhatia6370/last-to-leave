@@ -28,8 +28,26 @@
 - **Seating:** 2 people per bench, sitting **facing away from the table**. Paul stands out in front of them, running each game. So the player's first-person view looks *outward* from the bench toward Paul, with the table behind them.
 - Paul's Pocket already uses the dark purple perforated-metal bench in the foreground.
 
+## Publishing (live)
+- Repo: https://github.com/aryan-bhatia6370/last-to-leave (public). Live site: https://aryan-bhatia6370.github.io/last-to-leave/ (GitHub Pages from `main`, root folder).
+- To publish an update: commit, then `git push`. Pages rebuilds automatically in about a minute. Commit and push only when the user asks.
+- The GitHub CLI lives in `.tools/` (git-ignored): `.tools/gh_2.105.0_macOS_arm64/bin/gh`. It's already signed in as the user.
+- Commits are signed with the user's GitHub no-reply email (repo-local git config), so their real email stays private.
+
 ## Privacy (the site is public)
 - Paul and the other Members are real people (teenagers). Use reference photos **only** as visual reference. Never copy them into the project, and never put real last names, the school's name, IDs or photos on the site. Paul's look: fair skin, short messy dark-brown hair, school uniform (white polo, navy lanyard + ID card, khaki trousers).
+
+## Competition Mode + online rules (decided 2026-11-18)
+- **Table:** 2–8 seats. Characters: Aryan, Nate, Jayden, Jardel, Aldrich, Andres, Nevin, Ivan (default-looking 3D figures for now; the user will send names and pictures for real models later). Each character can be taken by only one player.
+- **Rounds:** Paul picks a random game and a variant each round. **Variants are weighted: the normal version about 2/3 of the time**, alternates (Bullet, Wind, Hard, Moving Cup...) the rest; never Endless modes. **The host (or the solo player) can override per game:** random (weighted, the default), normal only (no alternates), or always one specific version (e.g. only Bullet for Marker Catching). **Round 1 is always Marker Catching** (any non-endless variant). **Paul's Pocket is left out** of Competition Mode for now. Players play **one at a time around the table** while everyone else watches. The **lowest scorer is eliminated** (stands up and walks away from the table).
+- **Ties for lowest:** only the tied players replay the same game; the lower one is out (repeat if they tie again).
+- **Pictionary / Equations race:** everyone sees Paul's board at once. The first correct answer is safe, then a **new** drawing/problem goes up for the rest, until one player never got one; they're eliminated.
+- **Final:** the last 2 players play a random game (not Pictionary or Equations); the winner is the Last to Leave. Final Rounds (special finale games) come later.
+- **Solo vs computers:** choose 1–7 computer players (doesn't have to fill all 8). Computers take open characters and get simulated scores.
+- **Accounts:** **Google sign-in.** On first sign-in the player **creates a username**. That username (never their Google name or email) is what other players and leaderboards see. Leaderboard metrics are still to be decided with the user.
+- **Online rooms:** **Google sign-in, account required** (no guests). Host creates a room code; others join and pick an untaken character; the host may add any number of computers (or none) to empty seats. Turns go one at a time while everyone spectates live. Scores are saved to accounts.
+- **Built (Phase 8 ✅):** `#/compete`. Code in `js/competition/`: `engine.js` (rules, game/version picking, computer scores and race solve times, ties), `tableScene.js` (3D table, seated players, walk-away, name tags), `playTurn.js` (runs one real minigame turn full-screen), `page.js` (setup screen + the run). Pictionary/Equations take `options.compete = { racers: [{ name, at }] }` for race boards. 3D people: `createPerson3D(look)` in `three/paul3d.js` (placeholder looks for Members). Debug: `?debug=1` + `window.__competeAutoHuman = true` lets a bot play your turns.
+- **Build order:** Phase 8 = Competition Mode solo vs computers. Phase 9 = Google accounts + cloud scores (Firebase; the user creates the Firebase project in their own Google account and Claude walks them through it). Phase 10 = online rooms with live spectating.
 
 ## Phase plan
 1. Foundations + menu + whiteboard/marker style + **Marker Catching** ✅
@@ -44,7 +62,7 @@
    - The HUD (scores, clock, popups, badges, debug) stays 2D on a transparent canvas on top.
    - ✅ **Menus and HUD restyled** to match: dark glass panels over a dark-purple perforated-metal backdrop (like the table), Inter for UI text, and a real 3D render of the table and Paul as the home page header (`three/heroShot.js`, rendered once and cached per session). In-game, `drawLabel` (shared/hud.js) uses the broadcast style (white bold sans, soft shadow) on the HUD canvas, and handwritten marker on whiteboard textures.
    - Still to do in theming: lore, Members, sounds, inside jokes, and (optionally) a lifelike rigged human model for Paul. Ask the user before downloading any model asset.
-8. **Competition Mode** (elimination run; always starts and ends with Marker Catching or a variant) + Final Rounds
+8. **Competition Mode** ✅ solo vs computers (see the rules above). Final Rounds come later.
 9. Online leaderboards (Firebase), player identity
 10. Online play with friends
 
