@@ -153,7 +153,7 @@ export function createCupCatching(container, host) {
 
     // jerking the cup flings markers out (never in Endless: there a spill ends the run, see below)
     const need = Math.max(C.spill.minAccel, C.spill.jerkAccel - C.spill.perMarker * (st.inCup.length - 1));
-    if (st.inCup.length && c.acc > need && st.time > (c.spillCooldown || 0) && st.phase !== 'done' && st.phase !== 'ready' && st.inCup.every((m) => m.anim >= 1)) {
+    if (C.spill.enabled && st.inCup.length && c.acc > need && st.time > (c.spillCooldown || 0) && st.phase !== 'done' && st.phase !== 'ready' && st.inCup.every((m) => m.anim >= 1)) {
       c.spillCooldown = st.time + C.spill.cooldownMs / 1000;
       spillOne([-acc[0] / c.acc, -acc[1] / c.acc]);
     }
@@ -540,7 +540,7 @@ export function createCupCatching(container, host) {
     }
 
     // keep-it-steady warning
-    if (st.cup.wobble > 0.3 && st.inCup.length) {
+    if (C.spill.enabled && st.cup.wobble > 0.3 && st.inCup.length) {
       const sp = cam.project(st.cup.rim);
       ctx.save();
       ctx.globalAlpha = clamp((st.cup.wobble - 0.3) / 0.4, 0, 1);

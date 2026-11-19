@@ -66,7 +66,7 @@ export const GAMES = [
   },
   {
     id: 'cup-catching',
-    rv: 2,
+    rv: 3, // 3: spilling removed (2026-11-19)
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'endless', label: 'Endless' }],
     name: 'Cup Catching',
     color: 'pink',

@@ -20,7 +20,7 @@
 | 4 | Archery | Foam Nevada/Wyoming/Connecticut at a handheld whiteboard **Paul holds up**, somewhere new every throw; Wind toggle; **Hotspots** toggle (orange bonus zone each throw: board 1 pt, zone 2 pts, max 6, pass 3; never more than half the board) | 2 ✅ |
 | 5 | Bowling | Yellow-black eraser vs 3 standing markers, 3 throws, max 9; Wind; Hard (1/2/3 pts); the eraser hops a little on landing; **Eraser: flat / on its side** button (or F) while aiming | 3 ✅ |
 | 6 | Paul's Pocket | Pick 1 of 8 markers; Paul scoops them into his khaki pocket, scrambles, pulls one out; 1-in-8 luck. Phones/touch: big color buttons to pick with | 6 ✅ |
-| 7 | Cup Catching | Red solo cup at waist height (up/down = farther/closer, 0.5–2 m); slower, steadier lobs than Marker Catching; midday sun so marker shadows fall under them; the cup tips a little toward an incoming marker; jerking the cup flings markers out (loses them; easier when fuller); Endless: Paul empties the cup at 8 (still counted), any spill or 3 misses in a row ends it | 4 ✅ |
+| 7 | Cup Catching | Red solo cup at waist height (up/down = farther/closer, 0.5–2 m); slower, steadier lobs than Marker Catching; midday sun so marker shadows fall under them; the cup tips a little toward an incoming marker; **no spilling** (removed 2026-11-19; `spill.enabled` in config brings it back); Endless: Paul empties the cup at 8 (still counted), 3 misses in a row ends it | 4 ✅ |
 | 8 | Cup Throwing | Throw all 8 markers into a cup **Paul holds** at his hip (`cup.heldByPaul`); fixed or moving cup; markers stay where they land; hardest game (~2–3/8 avg) | 3 ✅ |
 
 ## Throwing games (Archery, Bowling, Cup Throwing, and any future ones)
@@ -34,7 +34,7 @@
 - `js/core/whatsNew.js` → `CHANGELOG` (newest first). **Add an entry at the top with every update you publish** (short, player-facing; `id` must sort after the previous one, e.g. a date). Returning players see the new entries once on the home page; brand-new players don't. Reopen from the home footer.
 
 ## Records versions
-- `rv` per game in `games/registry.js`. Bump it when a game changes enough that old bests don't compare: old bests are then ignored locally and in the cloud. Leaderboard boards have their own `v` in `core/leaderboard.js` (board id gets `.v2`), which starts that board fresh. Last reset: 2026-11-18 (all games except Paul's Pocket; the three Endless boards).
+- `rv` per game in `games/registry.js`. Bump it when a game changes enough that old bests don't compare: old bests are then ignored locally and in the cloud. Leaderboard boards have their own `v` in `core/leaderboard.js` (board id gets `.v2`), which starts that board fresh. Last resets: 2026-11-18 (all games except Paul's Pocket; the three Endless boards); 2026-11-19 Cup Catching rv 3 + endless-cup v3 (spilling removed).
 
 ## The real setting (use this for theming)
 - **The table:** a square, perforated (expanded-metal) outdoor picnic table with four separate benches, one on each side, and a black tube frame. It's painted **dark purple, close to black**.

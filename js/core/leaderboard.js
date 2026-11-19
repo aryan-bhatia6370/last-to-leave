@@ -37,7 +37,7 @@ export const CATEGORIES = [
 export const BOARDS = {
   'endless-catch': { v: 2, label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
   'endless-bullet': { v: 2, label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
-  'endless-cup': { v: 2, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
+  'endless-cup': { v: 3, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
   'endless-rush': { label: 'Equations Rush', note: 'Most problems solved in one run', type: 'best', game: 'equations', variant: 'rush', unit: 'solved' },
   'endless-streak': { label: 'Pictionary Streak', note: 'Most drawings guessed before 3 strikes', type: 'best', game: 'pictionary', variant: 'streak', unit: 'guessed' },
   'fast-equations': { label: 'Fastest Equations', note: 'Best average time in a game where you solved all 3', type: 'fastest', game: 'equations', scale: 10, decimals: 1, suffix: 's' },

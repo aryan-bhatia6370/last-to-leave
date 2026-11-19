@@ -52,10 +52,11 @@ export const CONFIG = {
     touchOffsetPx: 70,     // on touch screens the cup sits above your finger so you can see it
   },
 
-  // Jerking the cup around flings markers out (not random: it happens when the cup
-  // speeds up or stops sharply, and more easily the fuller it is). Not in Endless,
-  // where any spill ends the run.
+  // Spilling is OFF (removed 2026-11-19 at the user's request). With enabled: true,
+  // jerking the cup flings markers out (when the cup speeds up or stops sharply,
+  // more easily the fuller it is), and in Endless a spill ends the run.
   spill: {
+    enabled: false,
     jerkAccel: 26,         // m/s² of sudden cup acceleration that flings one out with 1 marker in...
     perMarker: 1.6,        // ...this much less per extra marker in the cup...
     minAccel: 14,          // ...but never below this

@@ -6,6 +6,14 @@ import { escapeHtml } from './env.js';
 
 export const CHANGELOG = [
   {
+    id: '2026-11-19b',
+    title: 'Cup Catching: no more spilling',
+    items: [
+      'Markers no longer fall out of the cup when you move it. Swing away.',
+      'Because that makes it easier, Cup Catching best scores and the Endless Cup Catching leaderboard were reset.',
+    ],
+  },
+  {
     id: '2026-11-19',
     title: 'Rush, Streak & Fastest',
     items: [
