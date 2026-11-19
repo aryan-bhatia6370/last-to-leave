@@ -7,6 +7,7 @@ import { createStage3D } from '../three/stage.js';
 import { buildCourtyard } from '../three/courtyard.js';
 import { createPicnicTable } from '../three/props.js';
 import { createPerson3D, createPaul3D } from '../three/paul3d.js';
+import { CHARACTERS } from './engine.js';
 import { createCamera } from '../shared/scene3d.js';
 import { startLoop } from '../shared/gameLoop.js';
 import { HUD_FONT } from '../shared/hud.js';
@@ -56,7 +57,8 @@ export function createTableScene(container, { onFrame } = {}) {
     for (const p of people.values()) stage.scene.remove(p.person.group);
     people.clear();
     players.forEach((pl, i) => {
-      const person = createPerson3D({ skin: PLACEHOLDER_SKIN, hair: PLACEHOLDER_HAIR, shirt: pl.shirt, pants: 0xbfa880 });
+      const extra = CHARACTERS.find((c) => c.id === pl.id)?.look || {};
+      const person = createPerson3D({ skin: PLACEHOLDER_SKIN, hair: PLACEHOLDER_HAIR, shirt: pl.shirt, pants: 0xbfa880, ...extra });
       stage.scene.add(person.group);
       people.set(pl.id, { person, seat: seatPose(pl.seat ?? i), state: 'seated', t: 0, walk: 0, name: pl.name, human: !!pl.human, status: '', highlight: false });
     });

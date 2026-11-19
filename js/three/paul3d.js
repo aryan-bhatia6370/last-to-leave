@@ -37,7 +37,10 @@ export function createPaul3D() {
   return createPerson3D(PAUL_LOOK);
 }
 
-/** look: { skin, shirt, pants, hair, shoe, lanyard (bool) } as 0xRRGGBB numbers */
+/**
+ * look: { skin, shirt, pants, hair, shoe, lanyard (bool) } as 0xRRGGBB numbers
+ * extras: shirtless (bool), muscle (1 = normal, bigger = bulkier arms/chest), heightScale (1 = normal), sigma (stern face + smirk)
+ */
 export function createPerson3D(look = PAUL_LOOK) {
   const L0 = { ...PAUL_LOOK, lanyard: false, ...look };
   const group = new THREE.Group();
@@ -83,13 +86,39 @@ export function createPerson3D(look = PAUL_LOOK) {
   bulge.visible = false;
   const belt = mesh(new THREE.CylinderGeometry(0.173, 0.173, 0.035, 32, 1, true), mats.belt, body);
   belt.scale.set(1, 1, 0.69);
+  const MUSCLE = L0.muscle || 1;
+  if (L0.shirtless) mats.polo = mats.skin; // no shirt: torso and sleeves are skin
   const torso = mesh(lathe([[0, 0.0], [0.168, 0.0], [0.172, 0.08], [0.178, 0.22], [0.195, 0.34], [0.2, 0.42], [0.18, 0.47], [0.1, 0.5], [0.05, 0.505], [0, 0.505]]), mats.polo, body);
-  torso.scale.set(1, 1, 0.62);
+  // a broader, deeper chest for a muscular build (narrow waist stays)
+  torso.scale.set(1 + (MUSCLE - 1) * 0.35, 1, 0.62 + (MUSCLE - 1) * 0.12);
+  if (L0.shirtless) {
+    const zAt = (r) => r * torso.scale.z;
+    // pecs
+    for (const sx of [-1, 1]) {
+      const pec = mesh(sph, mats.skin, body);
+      pec.scale.set(0.074, 0.046, 0.03);
+      pec.position.set(sx * 0.072, 0.372, zAt(0.198) - 0.008);
+    }
+    // six pack: 3 rows of 2
+    for (let row = 0; row < 3; row++) {
+      for (const sx of [-1, 1]) {
+        const ab = mesh(sph, mats.skin, body);
+        ab.scale.set(0.03, 0.03, 0.013);
+        const y = 0.27 - row * 0.068;
+        ab.position.set(sx * 0.034, y, zAt(0.18) - 0.004);
+      }
+    }
+    // the line down the middle and the V at the hips
+    const line = mesh(new THREE.BoxGeometry(0.004, 0.22, 0.004), new THREE.MeshStandardMaterial({ color: 0xa8846c, roughness: 0.8 }), body);
+    line.position.set(0, 0.2, zAt(0.18) + 0.006);
+  }
   // collar + placket
   const collar = mesh(new THREE.TorusGeometry(0.062, 0.014, 10, 28), mats.polo, body);
+  collar.visible = !L0.shirtless;
   collar.rotation.x = Math.PI / 2 - 0.25;
   collar.position.set(0, 0.5, 0.012);
   const placket = mesh(new THREE.BoxGeometry(0.03, 0.12, 0.006), mats.polo, body);
+  placket.visible = !L0.shirtless;
   placket.position.set(0, 0.42, 0.118);
   // lanyard + ID card
   for (const sx of (L0.lanyard ? [-1, 1] : [])) {
@@ -106,7 +135,7 @@ export function createPerson3D(look = PAUL_LOOK) {
   }
   // neck + head
   const neck = mesh(cyl, mats.skin, body);
-  neck.scale.set(0.046, 0.12, 0.046);
+  neck.scale.set(0.046 * (1 + (MUSCLE - 1) * 0.5), 0.12, 0.046 * (1 + (MUSCLE - 1) * 0.5));
   neck.position.set(0, 0.56, 0);
   const head = new THREE.Group();
   head.position.set(0, H.head - H.belt, 0);
@@ -136,6 +165,12 @@ export function createPerson3D(look = PAUL_LOOK) {
     const brow = mesh(new THREE.BoxGeometry(0.03, 0.005, 0.006), mats.brow, head);
     brow.position.set(sx * 0.034, 0.034, 0.094);
     brow.rotation.z = -sx * 0.08;
+    if (L0.sigma) { // stern: brows down toward the middle, eyes narrowed
+      brow.scale.set(1.1, 1.6, 1);
+      brow.position.y = 0.029;
+      brow.rotation.z = sx * 0.28;
+      eye.scale.y = 0.0042;
+    }
   }
   const nose = mesh(sph, mats.skin, head);
   nose.scale.set(0.014, 0.026, 0.02);
@@ -143,6 +178,14 @@ export function createPerson3D(look = PAUL_LOOK) {
   const lips = mesh(sph, mats.lip, head);
   lips.scale.set(0.022, 0.006, 0.008);
   lips.position.set(0, -0.042, 0.094);
+  if (L0.sigma) {
+    // a one-sided smirk and a strong square jaw
+    lips.rotation.z = 0.16;
+    lips.position.x = 0.004;
+    const jaw = mesh(sph, mats.skin, head);
+    jaw.scale.set(0.082, 0.04, 0.078);
+    jaw.position.set(0, -0.07, 0.012);
+  }
 
   // ---- limbs (re-posed every frame) ----
   const limb = (r, mat) => { const m = mesh(cyl, mat); m.userData.r = r; return m; };
@@ -153,9 +196,10 @@ export function createPerson3D(look = PAUL_LOOK) {
   }));
   // the right arm gets its own materials so it can turn see-through (drawing on the whiteboard)
   const armMats = [{ skin: mats.skin, polo: mats.polo }, { skin: mats.skin.clone(), polo: mats.polo.clone() }];
+  const M = MUSCLE;
   const arms = [-1, 1].map((_, i) => ({
-    shoulder: joint(0.062, armMats[i].polo), sleeve: limb(0.06, armMats[i].polo), upper: limb(0.042, armMats[i].skin),
-    elbow: joint(0.042, armMats[i].skin), fore: limb(0.037, armMats[i].skin), hand: mesh(sph, armMats[i].skin),
+    shoulder: joint(0.062 * (1 + (M - 1) * 0.9), armMats[i].polo), sleeve: limb(0.06 * M, armMats[i].polo), upper: limb(0.042 * M, armMats[i].skin),
+    elbow: joint(0.042 * (1 + (M - 1) * 0.6), armMats[i].skin), fore: limb(0.037 * (1 + (M - 1) * 0.7), armMats[i].skin), hand: mesh(sph, armMats[i].skin),
   }));
   let rightOpacity = 1;
   function setRightArmOpacity(o) {
@@ -246,5 +290,15 @@ export function createPerson3D(look = PAUL_LOOK) {
     });
   }
 
-  return { group, update };
+  // Taller (or shorter) than normal: scale the whole figure about the spot they stand on.
+  const SCALE = L0.heightScale || 1;
+  const rawUpdate = update;
+  function scaledUpdate(p) {
+    rawUpdate(p);
+    if (SCALE === 1) return;
+    group.scale.setScalar(SCALE);
+    toThree([p.x, p.floorY ?? 0, p.z], group.position).multiplyScalar(1 - SCALE);
+  }
+
+  return { group, update: scaledUpdate };
 }

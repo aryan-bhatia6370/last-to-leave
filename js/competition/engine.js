@@ -22,7 +22,8 @@ export const COMPETITION = {
 
 // Placeholder looks until the user sends pictures (polo color = their seat color).
 export const CHARACTERS = [
-  { id: 'aryan', name: 'Aryan', shirt: 0x6d3fd0 },
+  // Aryan's look (for now): shirtless, six pack, huge arms, ~5 in taller, sigma face
+  { id: 'aryan', name: 'Aryan', shirt: 0x6d3fd0, look: { shirtless: true, muscle: 1.6, heightScale: 1.073, sigma: true } },
   { id: 'nate', name: 'Nate', shirt: 0x1f6fd1 },
   { id: 'jayden', name: 'Jayden', shirt: 0x1f9d4c },
   { id: 'jardel', name: 'Jardel', shirt: 0xd7263d },
