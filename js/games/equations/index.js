@@ -12,8 +12,9 @@ export default {
   howTo: [
     'The whiteboard flips over to show a math problem.',
     `Type the answer and press <kbd>Enter</kbd>. You have ${CONFIG.roundSeconds} seconds.`,
+    `In Competition and online there's no clock: first right answer is safe, and a wrong one makes you wait ${CONFIG.raceLockoutSec} seconds.`,
     `Every wrong answer costs ${CONFIG.wrongPenaltySec} seconds. Fractions like <strong>7/4</strong> or decimals are fine.`,
-    'Mostly mental math with exponents and fractions. Sometimes algebra or geometry. Very rarely… calculus.',
+    'Mostly mental math with exponents and fractions. Algebra fairly often, geometry sometimes. Rarely a super quick one… or calculus.',
     `Solve ${CONFIG.passScore} of ${CONFIG.rounds} to survive.`,
   ],
   options: [],

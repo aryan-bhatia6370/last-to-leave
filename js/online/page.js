@@ -6,7 +6,7 @@
 import { onAccount } from '../core/account.js';
 import { DEBUG, escapeHtml, ensureFonts } from '../core/env.js';
 import { CHARACTERS, competitionGames, isRaceGame, maxScoreFor } from '../competition/engine.js';
-import { ONLINE, isCode, createRoom, roomExists, joinRoom, claimChar, setMeta, subscribeRoom, effectiveHost } from './room.js';
+import { ONLINE, isCode, createRoom, roomExists, joinRoom, claimChar, setMeta, setReady, sendRequest, subscribeRoom, effectiveHost } from './room.js';
 import { buildRun, startReferee } from './referee.js';
 import { rtdb } from './net.js';
 import { createReceiver, startPublisher } from './mirror.js';
@@ -14,6 +14,8 @@ import { runPerformance } from './performance.js';
 import { scores } from '../core/scores.js';
 import { recordOnlineRun } from '../core/leaderboard.js';
 
+const PER_PLAYER_ORDER = ['marker-catching'];
+const mixSeed = (seed, uid) => { let h = seed >>> 0; for (const ch of uid) h = Math.imul(h ^ ch.charCodeAt(0), 2654435761) >>> 0; return h; };
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 
@@ -157,6 +159,7 @@ class Lobby {
               </div>
               <p class="muted" data-summary></p>
               <button class="btn btn-primary btn-big" data-start hidden>Start the game</button>
+              <button class="btn btn-primary btn-big" data-ready hidden>Ready</button>
               <p class="hint" data-wait></p>
             </div>
           </div>
@@ -175,6 +178,10 @@ class Lobby {
       setMeta(code, { cpus: Math.max(0, Math.min(ONLINE.maxSeats - this.humans().length, cur + Number(b.dataset.cpu))) });
     }));
     outlet.querySelectorAll('[data-ver]').forEach((sel) => sel.addEventListener('change', () => setMeta(code, { [`versions/${sel.dataset.ver}`]: sel.value })));
+    this.$('[data-ready]').addEventListener('click', () => {
+      const m = this.room?.members?.[me.uid];
+      if (m?.char) setReady(code, me.uid, !m.ready);
+    });
     this.$('[data-start]').addEventListener('click', async (e) => {
       e.target.disabled = true;
       const { now, D, ref } = await rtdb();
@@ -188,6 +195,12 @@ class Lobby {
     return Object.entries(r.members || {}).filter(([uid, m]) => m.char && r.presence?.[uid]);
   }
 
+  /** Everyone here (except the host) has a seat and pressed Ready. */
+  allReady() {
+    const r = this.room || {};
+    return Object.entries(r.members || {}).filter(([uid]) => r.presence?.[uid]).every(([uid, m]) => m.char && (uid === r.meta?.host || m.ready));
+  }
+
   update(r) {
     this.room = r;
     const isHost = r.meta?.host === this.me.uid;
@@ -197,7 +210,7 @@ class Lobby {
       const here = !!r.presence?.[uid];
       return `<li class="${here ? '' : 'away'}" style="--seat:${c ? hex(c.shirt) : '#555'}"><span class="dot"></span>
         <strong>${escapeHtml(m.username)}</strong>${uid === this.me.uid ? ' <em>you</em>' : ''}${uid === r.meta?.host ? ' <span class="tag">host</span>' : ''}
-        <span class="muted">${c ? escapeHtml(c.name) : 'picking…'}${here ? '' : ' · offline'}</span></li>`;
+        <span class="muted">${c ? escapeHtml(c.name) : 'picking…'}${here ? '' : ' · offline'}</span>${uid === r.meta?.host ? '' : `<span class="ready-tag ${m.ready ? 'on' : ''}">${m.ready ? 'Ready' : 'Not ready'}</span>`}</li>`;
     }).join('');
     const chars = r.chars || {};
     const mine = r.members?.[this.me.uid]?.char;
@@ -216,11 +229,18 @@ class Lobby {
     const total = humans + cpus;
     this.$('[data-summary]').textContent = `${total} at the table: ${humans} player${humans === 1 ? '' : 's'}${cpus ? ` + ${cpus} computer${cpus === 1 ? '' : 's'}` : ''}.${humans >= ONLINE.minRealForBoards ? ' Counts for online leaderboards.' : ` Online leaderboards need ${ONLINE.minRealForBoards}+ players.`}`;
     const start = this.$('[data-start]');
+    const ready = this.$('[data-ready]');
+    const meReady = !!r.members?.[this.me.uid]?.ready;
+    const everyone = this.allReady();
     start.hidden = !isHost;
-    start.disabled = total < 2 || !mine;
+    start.disabled = total < 2 || !mine || !everyone;
+    ready.hidden = isHost;
+    ready.disabled = !mine;
+    ready.textContent = meReady ? 'Ready ✓ (tap to undo)' : 'Ready';
+    ready.classList.toggle('btn-primary', !meReady);
     this.$('[data-wait]').textContent = isHost
-      ? (!mine ? 'Pick your seat first.' : total < 2 ? 'Need at least 2 at the table (add a computer or wait for a friend).' : 'Players without a seat will watch.')
-      : (mine ? 'Waiting for the host to start…' : 'Pick a seat to play, or just watch.');
+      ? (!mine ? 'Pick your seat first.' : !everyone ? 'Waiting for everyone to pick a seat and press Ready…' : total < 2 ? 'Need at least 2 at the table (add a computer or wait for a friend).' : 'Everyone is ready!')
+      : (!mine ? 'Pick a seat, then press Ready.' : meReady ? 'Waiting for the host to start…' : 'Press Ready when you are.');
   }
 }
 
@@ -246,6 +266,7 @@ class RunView {
         <ol class="comp-players" data-players></ol>
         <p class="comp-msg" data-msg></p>
         <div class="btn-row" data-actions></div>
+        <div class="btn-row" data-skip></div>
         <p class="room-tag">Room ${code}</p>
       </aside>
       <a class="btn btn-small comp-quit" href="#/online">Leave</a>
@@ -270,8 +291,10 @@ class RunView {
     if (sig !== this.sig) {
       this.sig = sig;
       this.table.setPlayers(Object.values(P).map((p) => ({ id: p.id, name: p.cpu ? p.name : `${p.name} · ${p.username}`, shirt: p.shirt, seat: p.seat, human: p.id === myId })));
-      for (const p of Object.values(P)) if (!p.alive && p.place) this.table.eliminate(p.id); // joined late: already gone
+      this.gone = new Set();
     }
+    // anyone out stands up and walks away (also covers joining late and "skip to results")
+    for (const p of Object.values(P)) if (!p.alive && !this.gone.has(p.id)) { this.gone.add(p.id); this.table.eliminate(p.id); }
     this.$('[data-round]').textContent = run.label?.round || '';
     this.$('[data-game]').textContent = run.label?.game || '';
     this.$('[data-variant]').textContent = run.label?.variant || '';
@@ -286,13 +309,26 @@ class RunView {
     for (const p of Object.values(P)) this.table.setStatus(p.id, !p.alive ? 'OUT' : (status[p.id] ?? ''), p.id === run.current);
 
     const s = run.step;
-    if (s.kind === 'out' && this.outFor !== s.id) { this.outFor = s.id; this.table.eliminate(s.who); }
     this.handleStep(room, run, s, myId);
+  }
+
+  /** All real players are out and computers are still going: speed it up or skip to the end. */
+  offerSkip(room, run, s) {
+    const box = this.$('[data-skip]');
+    const humansIn = Object.values(run.players).some((p) => p.alive && !p.cpu);
+    const show = !humansIn && s.kind !== 'done' && Object.values(run.players).some((p) => p.alive && p.cpu);
+    if (!show) { box.innerHTML = ''; return; }
+    if (box.childElementCount) { box.querySelector('[data-fast]').disabled = !!run.fast; return; }
+    box.innerHTML = '<button class="btn btn-small" data-fast>Speed up</button><button class="btn btn-small" data-skipto>Skip to results</button>';
+    box.querySelector('[data-fast]').disabled = !!run.fast;
+    box.querySelector('[data-fast]').addEventListener('click', () => sendRequest(this.code, this.me.uid, 'fast'));
+    box.querySelector('[data-skipto]').addEventListener('click', () => sendRequest(this.code, this.me.uid, 'skip'));
   }
 
   handleStep(room, run, s, myId) {
     const P = run.players;
     const actions = this.$('[data-actions]');
+    this.offerSkip(room, run, s);
     // stop watching when that turn is over
     if (this.watching && !(s.kind === 'turn' && s.turnKey + ':' + s.idx === this.watching.key && (s.results || {})[s.order[s.idx]] == null)) this.stopWatching();
 
@@ -331,8 +367,12 @@ class RunView {
     let stopPub = null;
     this.table.pause();
     const { playTurn } = await import('../competition/playTurn.js');
+    // Marker Catching: same set of throws for everyone, but your own order and spots.
+    // Every other game: exactly the same layout for everyone.
+    const own = PER_PLAYER_ORDER.includes(s.game);
     const result = await playTurn(document.body, {
-      gameId: s.game, variant: s.variant, seed: s.seed, online: true,
+      gameId: s.game, variant: s.variant, seed: own ? mixSeed(s.seed, this.me.uid) : s.seed, online: true,
+      extra: own ? { shareSeed: s.seed } : {},
       banner: `${run.label?.round || ''}: ${run.label?.game || ''}`,
       onInstance: (inst) => { stopPub = startPublisher(() => inst.state?.(), (f) => D.set(liveRef, f).catch(() => {})); },
     });
@@ -415,9 +455,7 @@ class RunView {
     let topRounds = 0;
     if (me) {
       const mine = rounds.filter((r) => (r.players || []).includes(myId) && (r.kind === 'race' || r.scores));
-      perf = runPerformance(mine.map((r) => (r.kind === 'race'
-        ? { kind: 'race', game: r.game, t: r.solve?.[myId] ?? null }
-        : { kind: 'scored', game: r.game, variant: r.variant, score: r.scores[myId] ?? 0 })));
+      perf = runPerformance(run, myId);
       topRounds = mine.filter((r) => (r.kind === 'race' ? r.first === myId : r.scores[myId] >= Math.max(...Object.values(r.scores)))).length;
       // save it (once per room) to records + online leaderboards
       const key = `ltl.online.saved.${this.code}.${run.seed}`;
@@ -441,7 +479,8 @@ class RunView {
         <h2 class="verdict ${me?.place === 1 ? 'pass' : 'fail'}">${me?.place === 1 ? 'You are the Last to Leave!' : `${escapeHtml(winner?.name || '')}${winner && !winner.cpu ? ` (${escapeHtml(winner.username)})` : ''} won it.`}</h2>
         ${me ? `<div class="big-score">${ordinal(me.place)}<small> / ${total}</small></div>
           <p class="muted">Performance <strong>${perf.toFixed(1)}</strong> / 100 · top score in ${topRounds} round${topRounds === 1 ? '' : 's'}${run.realCount >= ONLINE.minRealForBoards ? '' : ' · leaderboards need 3+ players'}</p>` : '<p class="muted">You watched this one.</p>'}
-        <ol class="final-order">${order.map((p) => `<li${p.id === myId ? ' class="you"' : ''}>${escapeHtml(p.name)} <span class="muted">${p.cpu ? 'computer' : escapeHtml(p.username)}</span></li>`).join('')}</ol>
+        <ol class="final-order">${order.map((p) => `<li${p.id === myId ? ' class="you"' : ''}>${escapeHtml(p.name)} <span class="muted">${p.uid ? escapeHtml(p.username) : 'computer'}</span>${p.uid ? `<span class="perf" title="Performance">${runPerformance(run, p.id).toFixed(1)}</span>` : ''}</li>`).join('')}</ol>
+        <p class="muted small-note">Numbers are each player's performance out of 100: how well they played each round against the table and for the game, plus where they finished.</p>
         <div class="btn-row"><a class="btn btn-primary" href="#/online">New room</a><a class="btn" href="#/leaderboards">Leaderboards</a><a class="btn" href="#/">Menu</a></div>
       </div>`;
   }

@@ -20,7 +20,7 @@ import { createStage3D, toThree, quatFromGameDir } from '../../three/stage.js';
 import { buildCourtyard } from '../../three/courtyard.js';
 import { createSoloCup, createMarkerPool, setRodPose } from '../../three/props.js';
 import { createPaul3D } from '../../three/paul3d.js';
-import { add, sub, mul, norm, lerp, lerp3, clamp, rotateAround, easeOut } from '../../shared/vec3.js';
+import { add, sub, mul, norm, lerp, lerp3, clamp, rotateAround, easeOut, dot as dot3 } from '../../shared/vec3.js';
 
 const INK = '#1f1f22';
 const SOFT = '#565a62';
@@ -76,7 +76,7 @@ export function createCupCatching(container, host) {
   const stage = createStage3D(container, { onResize, getCam: () => cam });
   const view = stage.hud;
   buildCourtyard(stage, {
-    floorY: FLOOR, buildingZ: 22, shadowCenter: [0, 3.5], shadowSize: 7,
+    floorY: FLOOR, buildingZ: 22, shadowCenter: [0, 2.5], shadowSize: 6, sunElevationDeg: W.sunElevationDeg, sunAzimuthDeg: 160,
     tables: [{ x: -3.4, z: 8.8, rotDeg: 18 }, { x: 3.9, z: 10.2, rotDeg: -12 }, { x: -7.5, z: 12.5, rotDeg: 40 }],
   });
   const paul3d = createPaul3D();
@@ -130,15 +130,32 @@ export function createCupCatching(container, host) {
       c.vel = [c.vel[0] * 0.8, c.vel[1] * 0.8];
     }
     const speed = Math.hypot(c.vel[0], c.vel[1]);
+    const prevV = c.prevVel || c.vel;
+    const acc = [(c.vel[0] - prevV[0]) / dt, (c.vel[1] - prevV[1]) / dt];
+    c.prevVel = c.vel.slice();
+    c.acc = Math.hypot(acc[0], acc[1]);
     c.wobble = lerp(c.wobble, clamp((speed - C.spill.safeSpeed * 0.7) / C.spill.safeSpeed, 0, 1), Math.min(1, dt * 8));
-    const tilt = clamp(-c.vel[0] * 0.06, -0.3, 0.3);
-    c.axis = norm([tilt, 1, clamp(c.vel[1] * 0.03, -0.15, 0.15)]);
+    let ax = clamp(-c.vel[0] * 0.06, -0.3, 0.3);
+    let az = clamp(c.vel[1] * 0.03, -0.15, 0.15);
+    // tip the cup a little toward a marker that's about to arrive
+    const s = st.shot;
+    if (s && s.state === 'flying' && s.vel) {
+      const left = s.T - s.t;
+      const k = clamp(1 - left / CUP.tiltStartSec, 0, 1);
+      const hv = Math.hypot(s.vel[0], s.vel[2]);
+      if (k > 0 && hv > 0.1) {
+        const t = Math.tan((CUP.tiltTowardDeg * Math.PI) / 180) * easeOut(k);
+        ax += (-s.vel[0] / hv) * t;
+        az += (-s.vel[2] / hv) * t;
+      }
+    }
+    c.axis = norm([ax, 1, az]);
 
-    // sloshing markers out
-    if (st.inCup.length && speed > C.spill.safeSpeed && st.phase !== 'done' && st.phase !== 'ready') {
-      const fill = Math.min(1, st.inCup.length / C.endless.capacity);
-      const rate = C.spill.ratePerMps * (speed - C.spill.safeSpeed) * (0.5 + C.spill.fullnessBoost * fill);
-      if (luck.next() < rate * dt) spillOne();
+    // jerking the cup flings markers out (never in Endless: there a spill ends the run, see below)
+    const need = Math.max(C.spill.minAccel, C.spill.jerkAccel - C.spill.perMarker * (st.inCup.length - 1));
+    if (st.inCup.length && c.acc > need && st.time > (c.spillCooldown || 0) && st.phase !== 'done' && st.phase !== 'ready' && st.inCup.every((m) => m.anim >= 1)) {
+      c.spillCooldown = st.time + C.spill.cooldownMs / 1000;
+      spillOne([-acc[0] / c.acc, -acc[1] / c.acc]);
     }
   }
 
@@ -157,14 +174,15 @@ export function createCupCatching(container, host) {
     return { back: lerp3(add(cm.from.back, c.rim), rest.back, k), cap: lerp3(add(cm.from.cap, c.rim), rest.cap, k) };
   }
 
-  function spillOne() {
+  /** One marker flies out. fling = [x, z] direction it's thrown (opposite the jerk). */
+  function spillOne(fling = [0, 0]) {
     const cm = st.inCup.pop();
     const e = inCupEnds(cm);
     const c = st.cup;
     st.debris.push({
       color: cm.color,
       p: lerp3(e.back, e.cap, 0.6),
-      v: [c.vel[0] * 0.8 + luck.range(-0.4, 0.4), 1.4 + luck.range(0, 0.6), luck.range(-0.6, 0.1)],
+      v: [c.vel[0] * 0.8 + fling[0] * 1.2 + luck.range(-0.2, 0.2), 1.3 + luck.range(0, 0.5), c.vel[1] * 0.8 + fling[1] * 1.2 + luck.range(-0.2, 0.2)],
       o: norm(sub(e.cap, e.back)),
       axis: norm([luck.range(-1, 1), luck.range(-1, 1), luck.range(-1, 1)]),
       spin: luck.range(8, 14),
@@ -264,16 +282,36 @@ export function createCupCatching(container, host) {
     const sp = cam.project(st.cup.rim);
     const text = rattled ? 'Rattled in!' : st.streak >= 3 ? `${st.streak} in a row!` : 'Caught!';
     popups.add(text, clamp(sp.x, 80, cam.W - 80), clamp(sp.y - 70, 90, cam.H - 60), rattled ? GOOD : s.color.hex, 32);
+    if (endless && st.inCup.length >= C.endless.capacity) st.dumpAt = st.time + 0.5; // full: Paul empties it
     setPhase('resolve', C.resolvePauseMs / 1000);
+  }
+
+  /** Endless: the cup is full, Paul tips it out (they all still count). */
+  function dumpCup() {
+    const c = st.cup;
+    for (const cm of st.inCup.splice(0)) {
+      const e = inCupEnds(cm);
+      st.debris.push({
+        color: cm.color, p: lerp3(e.back, e.cap, 0.6),
+        v: [luck.range(-0.5, 0.5), 1.2 + luck.range(0, 0.6), 1.2 + luck.range(0, 0.5)],
+        o: norm(sub(e.cap, e.back)), axis: norm([luck.range(-1, 1), luck.range(-1, 1), luck.range(-1, 1)]),
+        spin: luck.range(6, 12), t: 0,
+      });
+    }
+    const sp = cam.project(c.rim);
+    popups.add('Cup emptied! Keep going', clamp(sp.x, 80, cam.W - 80), clamp(sp.y - 70, 90, cam.H - 60), GOOD, 28);
   }
 
   function checkCup(s, prev) {
     const rim = st.cup.rim;
     const rimY = rim[1];
+    const n = st.cup.axis; // the opening faces along the cup's axis (tipped a little toward the throw)
+    const d0 = dot3(sub(prev, rim), n), d1 = dot3(sub(s.p, rim), n);
     // dropping down through the opening?
-    if (prev[1] > rimY && s.p[1] <= rimY && s.vel[1] < 0) {
-      const I = lerp3(prev, s.p, (prev[1] - rimY) / (prev[1] - s.p[1]));
-      const di = Math.hypot(I[0] - rim[0], I[2] - rim[2]);
+    if (d0 > 0 && d1 <= 0 && dot3(s.vel, n) < 0) {
+      const I = lerp3(prev, s.p, d0 / (d0 - d1));
+      const off = sub(I, rim);
+      const di = Math.hypot(off[0], off[1], off[2]);
       const fill = Math.min(1, st.inCup.length / C.endless.capacity);
       const inR = CUP.inRadius * (1 - CUP.crowdShrink * fill);
       if (di <= inR) { goIn(s, I, false); return; }
@@ -336,7 +374,7 @@ export function createCupCatching(container, host) {
   }
 
   function result() {
-    const score = st.inCup.length;
+    const score = endless ? st.caught : st.inCup.length; // Endless: everything you caught (Paul empties the cup at 8)
     return {
       gameId: 'cup-catching',
       variant,
@@ -355,6 +393,7 @@ export function createCupCatching(container, host) {
     popups.update(dt);
     updateCup(dt);
     for (const cm of st.inCup) cm.anim = Math.min(1, cm.anim + dt / 0.2);
+    if (st.dumpAt && st.time >= st.dumpAt) { st.dumpAt = 0; dumpCup(); }
     for (const d of st.debris) {
       d.t += dt;
       d.v = [d.v[0], d.v[1] - 9.8 * dt, d.v[2]];
@@ -450,10 +489,10 @@ export function createCupCatching(container, host) {
     const pad = Math.max(14, Math.min(cam.W, cam.H) * 0.025);
     const big = Math.round(clamp(cam.H * 0.065, 30, 56));
     const small = Math.round(big * 0.42);
-    drawLabel(ctx, 'IN THE CUP', pad, pad + small, small, SOFT);
-    drawLabel(ctx, endless ? `${st.inCup.length}` : `${st.inCup.length} / ${C.throwsPerGame}`, pad, pad + small + big * 0.95, big, INK);
+    drawLabel(ctx, endless ? 'CAUGHT' : 'IN THE CUP', pad, pad + small, small, SOFT);
+    drawLabel(ctx, endless ? `${st.caught}` : `${st.inCup.length} / ${C.throwsPerGame}`, pad, pad + small + big * 0.95, big, INK);
     const line = endless
-      ? `Speed ×${st.speed.toFixed(2)} · cup ${st.inCup.length}/${C.endless.capacity}`
+      ? `Speed ×${st.speed.toFixed(2)} · Cup ${st.inCup.length}/${C.endless.capacity}`
       : `Throw ${Math.min(st.throwIndex + 1, C.throwsPerGame)} of ${C.throwsPerGame}`;
     drawLabel(ctx, line, pad, pad + small + big * 0.95 + small * 1.5, small, SOFT);
 

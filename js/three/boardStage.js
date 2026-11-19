@@ -86,6 +86,7 @@ export function createBoardStage(container, { boardW = 0.7, boardH = 0.52, board
       board.updateMatrixWorld(true);
       const leftHand = local(-boardW / 2 + 0.012, -boardH * 0.12, -0.03);
       let rightHand = local(boardW / 2 - 0.012, -boardH * 0.12, -0.03);
+      let rightElbow = null;
       pen.visible = false;
       if (eraser) eraser.visible = false;
       if (penUV) {
@@ -95,6 +96,8 @@ export function createBoardStage(container, { boardW = 0.7, boardH = 0.52, board
         setRodPose(pen, butt, tip);
         pen.visible = true;
         rightHand = local(px + 0.035, py - 0.06, 0.085);
+        // he's behind the board: the arm comes over the top edge, see-through so the sketch stays visible
+        rightElbow = local(px * 0.5 + 0.08, boardH / 2 + 0.1, 0.02);
       } else if (eraseUV && eraser) {
         const ex = (eraseUV[0] - 0.5) * boardW, ey = (0.5 - eraseUV[1]) * boardH;
         eraser.position.copy(v.set(ex, ey, 0.027));
@@ -102,8 +105,9 @@ export function createBoardStage(container, { boardW = 0.7, boardH = 0.52, board
         eraser.quaternion.copy(board.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2));
         eraser.visible = true;
         rightHand = local(ex, ey - 0.01, 0.07);
+        rightElbow = local(ex * 0.5 + 0.08, boardH / 2 + 0.1, 0.02);
       }
-      paul.update({ x: 0, z: boardZ + 0.32, floorY, yaw: 0, leftHand, rightHand });
+      paul.update({ x: 0, z: boardZ + 0.32, floorY, yaw: 0, leftHand, rightHand, rightElbow, rightArmOpacity: rightElbow ? 0.35 : 1 });
     },
     render() { stage.render(); },
     destroy() { stage.destroy(); },

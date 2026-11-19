@@ -40,20 +40,27 @@ export const CONFIG = {
     throwerSpreadX: 0.8,          // how far the thrower roams left/right
     spinRadPerSec: [5, 15],       // tumble speed
     styles: { overhand: 0.4, sidearm: 0.3, underhand: 0.3 },
+    // Now and then Paul throws a much faster or much slower one (not in Bullet).
+    rare: {
+      fastChance: 0.03,
+      slowChance: 0.03,
+      fast: { flightTimeSec: [0.5, 0.62], arcHeightM: [0.05, 0.22] },
+      slow: { flightTimeSec: [1.6, 1.95], arcHeightM: [0.6, 1.0] },
+    },
   },
 
-  // Bullet: faster throws, but centered and predictable.
+  // Bullet: faster throws, tighter and more predictable than regular (but not a lot).
   bullet: {
-    flightTimeSec: [0.5, 0.6],
-    arcHeightM: [0.06, 0.2],      // flatter, line-drive throws
+    flightTimeSec: [0.47, 0.66],
+    arcHeightM: [0.05, 0.3],      // flatter, line-drive throws
     windupMs: [260, 320],
     gapMs: [400, 650],
     catchWindowMs: 220,
-    targetSpreadX: 0.38,
-    targetSpreadY: 0.32,
-    throwerSpreadX: 0.25,
-    spinRadPerSec: [3, 7],
-    styles: { overhand: 0.85, sidearm: 0.15, underhand: 0 },
+    targetSpreadX: 0.55,
+    targetSpreadY: 0.48,
+    throwerSpreadX: 0.45,
+    spinRadPerSec: [3, 9],
+    styles: { overhand: 0.65, sidearm: 0.3, underhand: 0.05 },
   },
 
   catching: {

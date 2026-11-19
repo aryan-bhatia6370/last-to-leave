@@ -12,7 +12,8 @@ service cloud.firestore {
     function namePath(lower) { return /databases/$(database)/documents/usernames/$(lower); }
 
     function validScore(d) {
-      return d.keys().hasOnly(['gameId', 'variant', 'score', 'maxScore', 'passed', 'playedAt'])
+      return d.keys().hasOnly(['gameId', 'variant', 'score', 'maxScore', 'passed', 'playedAt', 'rv'])
+        && (!('rv' in d) || d.rv is int)
         && d.gameId is string && d.gameId.size() <= 40
         && d.variant is string && d.variant.size() <= 40
         && d.score is number && d.score >= 0 && d.score <= 100000
@@ -69,7 +70,7 @@ service cloud.firestore {
     function cap(board) { return boardKind(board) == 'comp-performance' ? 1000 : 5000; }
     function validEntry(board, uid) {
       return isOwner(uid)
-        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})~(endless-catch|endless-bullet|endless-cup|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
+        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})([.]v[0-9]+)?~(endless-catch|endless-bullet|endless-cup|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
         && request.resource.data.keys().hasOnly(['uid', 'username', 'value', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.username == get(userPath(uid)).data.username

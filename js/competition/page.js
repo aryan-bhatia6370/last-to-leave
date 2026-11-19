@@ -167,6 +167,7 @@ class Run {
   // ---------- helpers ----------
   check() { if (this.dead) throw ABORT; }
   wait(ms) {
+    if (this.skipToEnd) return Promise.resolve().then(() => this.check()); // "See results": no waiting at all
     return new Promise((resolve) => this.timers.push(setTimeout(resolve, this.fast ? Math.min(ms, 250) : ms))).then(() => this.check());
   }
   alive() { return this.players.filter((p) => p.alive); }
@@ -246,7 +247,7 @@ class Run {
   }
 
   async scored(game, variant, contenders, round, replay = false) {
-    const max = maxScoreFor(game.id);
+    const max = maxScoreFor(game.id, variant);
     const fmt = (s) => (max != null ? `${s}/${max}` : `${s}`);
     const sorted = contenders.slice().sort((a, b) => a.seat - b.seat);
     const k = round % sorted.length;
@@ -330,13 +331,14 @@ class Run {
     this.statusText[id] = 'OUT';
     this.renderPanel();
     this.say(`${this.name(id)} has to leave the table.`);
-    await this.table.eliminate(id);
+    if (this.skipToEnd) this.table.eliminate(id); // don't wait for the walk-away
+    else await this.table.eliminate(id);
     this.check();
     if (p.human && this.alive().length > 1) {
       this.say(`You're out, ${this.ordinal(p.place)} of ${this.total}.`);
       const box = this.$('[data-actions]');
       const choice = this.autoHuman ? 'watch' : await new Promise((resolve) => {
-        box.innerHTML = '<button class="btn btn-primary" data-w>Watch the rest (fast)</button><button class="btn" data-e>See results</button>';
+        box.innerHTML = '<button class="btn btn-primary" data-w>Speed up the rest</button><button class="btn" data-e>Skip to results</button>';
         box.querySelector('[data-w]').addEventListener('click', () => resolve('watch'));
         box.querySelector('[data-e]').addEventListener('click', () => resolve('end'));
       });

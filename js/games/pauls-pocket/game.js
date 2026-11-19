@@ -96,14 +96,29 @@ export function createPaulsPocket(container, host) {
     return best;
   }
 
+  function pickMarker(i) {
+    if (st.phase !== 'pick' || i < 0) return;
+    st.picked = i;
+    popups.add(`You picked ${MARKER_COLORS[i].name.toUpperCase()}`, size.w / 2, size.h * 0.16, MARKER_COLORS[i].hex, 32, 1.2);
+    setPhase('lockIn', C.lockInMs / 1000);
+    chips.hidden = true;
+  }
+
+  // Big color buttons to pick with (shown on small/touch screens, where the
+  // markers on the bench are small and close together).
+  const chips = document.createElement('div');
+  chips.className = 'pocket-chips';
+  chips.hidden = true;
+  chips.innerHTML = MARKER_COLORS.map((c, i) => `<button type="button" data-i="${i}" style="--c:${c.hex}" aria-label="${c.name}"><span></span>${c.name}</button>`).join('');
+  chips.addEventListener('pointerdown', (e) => e.stopPropagation());
+  chips.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) pickMarker(Number(b.dataset.i)); });
+  container.appendChild(chips);
+  const smallScreen = () => matchMedia('(max-width: 760px), (pointer: coarse)').matches;
+
   const detachPointer = attachPointer(view.canvas, {
     down: (p) => {
       if (st.phase !== 'pick') return;
-      const i = markerAt(p);
-      if (i < 0) return;
-      st.picked = i;
-      popups.add(`You picked ${MARKER_COLORS[i].name.toUpperCase()}`, size.w / 2, size.h * 0.16, MARKER_COLORS[i].hex, 32, 1.2);
-      setPhase('lockIn', C.lockInMs / 1000);
+      pickMarker(markerAt(p));
     },
     move: (p) => { st.hover = p && st.phase === 'pick' ? markerAt(p) : -1; },
   });
@@ -112,6 +127,7 @@ export function createPaulsPocket(container, host) {
     st.phase = p;
     st.phaseT = 0;
     st.phaseDur = sec;
+    chips.hidden = !(p === 'pick' && smallScreen() && !host.options?.spectate);
   }
 
   function update(dt) {
@@ -223,7 +239,7 @@ export function createPaulsPocket(container, host) {
   if (host.debug) {
     window.__paulsPocket = {
       st, pulledIndex, canvas: view.canvas,
-      pick: (i) => { if (st.phase === 'pick') { st.picked = i; setPhase('lockIn', C.lockInMs / 1000); } },
+      pick: (i) => pickMarker(i),
       step: (sec, dt = 1 / 60) => { for (let t = 0; t < sec; t += dt) update(dt); render(); },
       screenOf: (i) => { const e = markerEnds(i); return e && cam.project(lerp3(e.back, e.cap, 0.75)); },
     };
@@ -240,6 +256,7 @@ export function createPaulsPocket(container, host) {
     destroy() {
       loop.stop();
       detachPointer();
+      chips.remove();
       stage.destroy();
     },
   };

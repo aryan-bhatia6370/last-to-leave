@@ -28,8 +28,19 @@ export function createPictionary(container, host) {
   const rng = createRng(seed);
   const mine = !!options.mine;
   const pool = mine ? DRAWINGS.concat(loadMyDrawings()) : DRAWINGS;
-  const picks = rng.shuffle(pool).slice(0, ROUNDS);
+  // Offline: skip drawings you've seen recently (races use the shared pick so everyone gets the same one).
+  const RECENT_KEY = 'ltl.pictionary.recent.v1';
+  let recent = [];
+  try { recent = compete ? [] : JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { recent = []; }
+  const fresh = pool.filter((d) => !recent.includes(d.answer));
+  const picks = rng.shuffle(fresh.length >= ROUNDS ? fresh : pool).slice(0, ROUNDS);
+  if (!compete) {
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify([...picks.map((d) => d.answer), ...recent].slice(0, 40))); } catch { /* fine */ }
+  }
   const rounds = picks.map((d) => buildTimeline(d, toPolylines(d, rng)));
+  // Offline the clock runs out a few seconds after Paul finishes the sketch.
+  // Competition/online there's no clock: only a cap after the sketch is done.
+  const roundSecs = rounds.map((r) => (compete ? r.end + C.raceNewBoardSec : r.end + rng.range(C.afterDrawSec)));
   const popups = createPopups();
 
   const st = {
@@ -42,7 +53,8 @@ export function createPictionary(container, host) {
     guessed: 0,
     wrong: 0,
     guessTimes: [],
-    clock: createRoundClock(C.roundSeconds),
+    clock: null, // set when each round starts
+    lockUntil: 0, // Competition/online: after a wrong guess you wait a few seconds
     flash: 0,
     activeSec: 0,
     raceT: 0,
@@ -87,7 +99,7 @@ export function createPictionary(container, host) {
     if (st.phase !== 'draw') return;
     const verdict = judgeGuess(text, rounds[st.round].drawing);
     if (verdict === 'yes') {
-      st.guessTimes.push(C.roundSeconds - st.clock.left);
+      st.guessTimes.push(st.clock.total - st.clock.left);
       st.raceWinner = 'you';
       endRound(true);
       return;
@@ -99,18 +111,20 @@ export function createPictionary(container, host) {
       return;
     }
     st.wrong++;
-    st.clock.penalize(C.wrongPenaltySec);
     st.flash = 1;
+    if (compete) {
+      st.lockUntil = st.raceT + C.raceLockoutSec;
+      bar.setEnabled(false);
+      popups.add(`Nope! Wait ${C.raceLockoutSec}s`, size.w / 2, size.h * 0.22, BAD, 30);
+      return;
+    }
+    st.clock.penalize(C.wrongPenaltySec);
     popups.add(`Nope! −${C.wrongPenaltySec}s`, size.w / 2, size.h * 0.22, BAD, 30);
     if (st.clock.expired) endRound(false, "Time's up!");
   }
 
   function endRound(won, why) {
-    if (compete && !won && !st.raceWinner) {
-      const first = compete.racers.slice().sort((a, b) => a.at - b.at)[0];
-      st.raceWinner = first ? first.name : null;
-      if (first && why === "Time's up!") why = `${first.name} got it!`;
-    }
+    if (compete && !won && !st.raceWinner && why === "Time's up!") why = 'Nobody got it. New drawing!';
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.guessed++;
     st.drawT = rounds[st.round].end + 1; // finish the sketch
@@ -137,9 +151,13 @@ export function createPictionary(container, host) {
           if (next) {
             st.raceWinner = next.name;
             endRound(false, `${next.name} got it!`);
+          } else if (st.lockUntil && st.raceT >= st.lockUntil) {
+            st.lockUntil = 0;
+            bar.setEnabled(true);
+            bar.focus();
           }
         }
-        if (st.clock.expired) endRound(false, "Time's up!");
+        if (st.phase === 'draw' && st.clock.expired) endRound(false, "Time's up!");
         break;
       case 'reveal':
         if (k >= 1) setPhase('erase', C.eraseMs / 1000);
@@ -179,7 +197,8 @@ export function createPictionary(container, host) {
 
   function startRound() {
     st.drawT = 0;
-    st.clock = createRoundClock(C.roundSeconds);
+    st.clock = createRoundClock(roundSecs[st.round]);
+    st.lockUntil = 0;
     setPhase('draw');
     bar.setEnabled(true);
     bar.focus();
@@ -256,7 +275,8 @@ export function createPictionary(container, host) {
     ctx.clearRect(0, 0, size.w, size.h);
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
     else drawRounds(ctx, size, 'GUESSED', st.guessed, ROUNDS, st.results, st.round);
-    if (st.phase === 'draw' || st.phase === 'reveal') drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
+    if (!compete && st.clock && (st.phase === 'draw' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, st.clock.total, st.flash);
+    if (compete && st.phase === 'draw' && st.lockUntil) drawLabel(ctx, `Wait ${Math.ceil(st.lockUntil - st.raceT)}…`, size.w / 2, size.h * 0.16, 30, BAD, 'center');
     popups.draw(ctx);
   }
 

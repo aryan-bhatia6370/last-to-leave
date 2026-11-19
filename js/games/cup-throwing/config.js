@@ -2,7 +2,7 @@
 // Cup Throwing — every tunable number lives here.
 // Distances are meters, times are milliseconds unless noted.
 // [a, b] means "a random value between a and b".
-// Meant to be one of the hardest games: aim for ~3 of 8 on average.
+// Still the hardest game, but fair: aim for ~2–3 of 8 on average (playtest: it was nearly impossible).
 // ============================================================
 export const CONFIG = {
   passScore: 3,           // markers in the cup (out of 8) to survive
@@ -27,15 +27,15 @@ export const CONFIG = {
     rimRadius: 0.068,
     bottomRadius: 0.047,
     height: 0.12,
-    inRadius: 0.058,      // marker center within this of the middle when crossing the rim = clean make
-    rimZone: 0.03,        // just past the rim: hits the rim and might rattle in
-    rattleInChance: 0.45, // best-case chance a rim hit drops in (less the further out it hits)
+    inRadius: 0.066,      // marker center within this of the middle when crossing the rim = clean make (was 0.058)
+    rimZone: 0.038,       // just past the rim: hits the rim and might rattle in (was 0.03)
+    rattleInChance: 0.6,  // best-case chance a rim hit drops in, less the further out it hits (was 0.45)
   },
 
   // Where the cup stands. Less spread than Bowling's markers.
   spot: {
-    distance: [2.3, 3.2],
-    offsetFrac: 0.35,
+    distance: [1.9, 2.7],   // was 2.3–3.2: closer, so the same flick error misses by less
+    offsetFrac: 0.6,        // fraction of SAFE_HALF_WIDTH (the width every screen shows)
   },
 
   paul: { behindCup: 0.32, sideOffset: 0.12 }, // where Paul stands relative to the cup he's holding
@@ -48,8 +48,8 @@ export const CONFIG = {
   // differences don't swing the distance much — the cup is a tiny target.
   throw: {
     elevationDeg: 48,
-    powerScale: 3.49,           // tuned for Paul holding the cup (2.5 screens/s flick reaches the middle distance)
-    powerScaleFloorCup: 3.28,   // ...and for a cup on the floor
+    powerScale: 3.2,            // tuned for Paul holding the cup (was 3.49: now it takes a harder flick to go far)
+    powerScaleFloorCup: 3.0,    // ...and for a cup on the floor
     powerExp: 0.25,
     minSpeed: 2,
     maxSpeed: 8,

@@ -7,6 +7,8 @@
 // Result shape every game reports (see CLAUDE.md "Game contract"):
 //   { gameId, variant, score, maxScore, passed, durationMs, stats, seed }
 
+import { recordsVersion } from '../games/registry.js';
+
 const SCORES_KEY = 'ltl.scores.v1';
 const PLAYER_KEY = 'ltl.player.v1';
 const MAX_HISTORY = 300;
@@ -21,7 +23,10 @@ export const LocalScoreAdapter = {
     if (!raw) return empty();
     try {
       const data = JSON.parse(raw);
-      return data && data.version === 1 ? data : empty();
+      if (!data || data.version !== 1) return empty();
+      // drop bests from older versions of a game (it changed since)
+      for (const [k, rec] of Object.entries(data.bests)) if (!isCurrent(rec)) delete data.bests[k];
+      return data;
     } catch { return empty(); }
   },
   async save(data) { safeSet(SCORES_KEY, JSON.stringify(data)); },
@@ -36,6 +41,8 @@ const saveListeners = new Set();
 export function onScoreSaved(fn) { saveListeners.add(fn); return () => saveListeners.delete(fn); }
 
 const bestKey = (gameId, variant) => `${gameId}:${variant}`;
+/** Is this record from the current version of its game? */
+export const isCurrent = (rec) => (rec?.rv ?? 1) >= recordsVersion(rec?.gameId);
 const makeId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 export const scores = {
@@ -45,6 +52,7 @@ export const scores = {
     const record = {
       id: makeId(),
       ...result,
+      rv: recordsVersion(result.gameId),
       player: getPlayer().name || '',
       playedAt: new Date().toISOString(),
     };
@@ -63,6 +71,7 @@ export const scores = {
     const data = await adapter.load();
     let changed = 0;
     for (const [k, rec] of Object.entries(incoming)) {
+      if (!isCurrent(rec)) continue;
       const cur = data.bests[k];
       if (!cur || rec.score > cur.score) { data.bests[k] = rec; changed++; }
     }

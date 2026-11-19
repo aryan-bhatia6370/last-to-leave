@@ -4,6 +4,7 @@
 // placeholder looks until the user sends their pictures).
 // Posed every frame:
 //   { x, z, floorY, yaw, walk, moving, sit (0..1), leftHand, rightHand, bulge }  (game coordinates)
+//   optional: rightElbow (force the right elbow), rightArmOpacity (0..1, see-through arm), flinch (0..1, just got hit)
 // Hands are world positions; null = resting (at his side, or on his lap when seated).
 
 import * as THREE from 'three';
@@ -150,10 +151,24 @@ export function createPerson3D(look = PAUL_LOOK) {
     thigh: limb(0.074, mats.khaki), knee: joint(0.068, mats.khaki), shin: limb(0.063, mats.khaki),
     cuff: joint(0.064, mats.khaki), shoe: mesh(new THREE.CapsuleGeometry(0.045, 0.17, 6, 12), mats.shoe),
   }));
-  const arms = [-1, 1].map(() => ({
-    shoulder: joint(0.062, mats.polo), sleeve: limb(0.06, mats.polo), upper: limb(0.042, mats.skin),
-    elbow: joint(0.042, mats.skin), fore: limb(0.037, mats.skin), hand: mesh(sph, mats.skin),
+  // the right arm gets its own materials so it can turn see-through (drawing on the whiteboard)
+  const armMats = [{ skin: mats.skin, polo: mats.polo }, { skin: mats.skin.clone(), polo: mats.polo.clone() }];
+  const arms = [-1, 1].map((_, i) => ({
+    shoulder: joint(0.062, armMats[i].polo), sleeve: limb(0.06, armMats[i].polo), upper: limb(0.042, armMats[i].skin),
+    elbow: joint(0.042, armMats[i].skin), fore: limb(0.037, armMats[i].skin), hand: mesh(sph, armMats[i].skin),
   }));
+  let rightOpacity = 1;
+  function setRightArmOpacity(o) {
+    if (o === rightOpacity) return;
+    rightOpacity = o;
+    for (const m of [armMats[1].skin, armMats[1].polo]) {
+      m.transparent = o < 1;
+      m.opacity = o;
+      m.depthWrite = o >= 1;
+      m.needsUpdate = true;
+    }
+    for (const k of ['shoulder', 'sleeve', 'upper', 'elbow', 'fore', 'hand']) arms[1][k].castShadow = o >= 1;
+  }
 
   const va = new THREE.Vector3(), vb = new THREE.Vector3(), vd = new THREE.Vector3();
   function place(m, a, b) {
@@ -168,6 +183,10 @@ export function createPerson3D(look = PAUL_LOOK) {
   function at(m, p) { toThree(p, m.position); }
 
   function update(p) {
+    setRightArmOpacity(p.rightArmOpacity ?? 1);
+    // flinch (0..1): something just hit him. A tiny step back and a wobble, then he's back in place.
+    const fl = p.flinch || 0;
+    if (fl > 0) p = { ...p, x: p.x + Math.sin(fl * 18) * 0.012 * fl, z: p.z + 0.03 * fl };
     const sit = p.sit || 0;
     const swing = Math.sin(p.walk || 0) * 0.14 * (p.moving || 0) * (1 - sit);
     const bob = Math.abs(Math.sin(p.walk || 0)) * 0.025 * (p.moving || 0) * (1 - sit);
@@ -210,7 +229,7 @@ export function createPerson3D(look = PAUL_LOOK) {
       const shoulder = toWorld(p, side * 0.2, beltY + (H.shoulder - H.belt), 0);
       const hand = hands[side];
       const out = [toWorld(p, side, 0, 0)[0] - p.x, 0, toWorld(p, side, 0, 0)[2] - p.z];
-      const elbow = elbowFor(shoulder, hand, out);
+      const elbow = (side === 1 && p.rightElbow) || elbowFor(shoulder, hand, out);
       const sleeveEnd = [shoulder[0] + (elbow[0] - shoulder[0]) * 0.5, shoulder[1] + (elbow[1] - shoulder[1]) * 0.5, shoulder[2] + (elbow[2] - shoulder[2]) * 0.5];
       at(A.shoulder, shoulder);
       place(A.sleeve, shoulder, sleeveEnd);

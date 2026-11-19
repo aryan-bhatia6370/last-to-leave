@@ -10,14 +10,14 @@ export default {
   passText: 'Still at the table!',
   failText: "You're leaving the table.",
   howTo: [
-    'You\'re holding a red solo cup. It <strong>follows your mouse or finger</strong>.',
-    'Markers get lobbed at you. Get the cup under them so they drop in through the top.',
+    'You\'re holding a red solo cup at waist height. It <strong>follows your mouse or finger</strong>: up moves it out toward Paul, down brings it back toward you.',
+    'Paul lobs markers up high. Get the cup under them so they drop in through the top. Their shadows on the ground show where they\'re coming down.',
     'Too high and they smack the side; off-center and they bounce off the rim.',
-    '<strong>Keep it steady:</strong> whipping the cup around can slosh markers back out, and that loses the catch.',
+    '<strong>Keep it steady:</strong> jerking the cup around flings markers back out (easier the fuller it is), and that loses the catch.',
     `Have ${CONFIG.passScore}+ of the 8 in the cup at the end to survive.`,
   ],
   options: [
-    { id: 'endless', label: 'Endless', desc: `Markers keep coming. ${CONFIG.endless.missesInARow} misses in a row, or a spill, and the run's over.` },
+    { id: 'endless', label: 'Endless', desc: `Markers keep coming. At ${CONFIG.endless.capacity} Paul empties your cup (they still count). ${CONFIG.endless.missesInARow} misses in a row, or a spill, and the run's over.` },
   ],
   variants: GAMES.find((g) => g.id === 'cup-catching').variants,
   statLabels: [

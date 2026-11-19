@@ -253,17 +253,33 @@ export function createMarkerCatching(container, host) {
     st.phaseDur = durSec;
   }
 
+  // What kind of throw (style + pace) each throw is. In Competition/online,
+  // options.shareSeed makes everyone get the same set of throws (same styles,
+  // same rare fast/slow ones) in a different order and spots.
+  function rollKind(r) {
+    const pace = !P.rare ? 'normal' : r.chance(P.rare.fastChance) ? 'fast' : r.chance(P.rare.slowChance) ? 'slow' : 'normal';
+    return { style: r.weighted(P.styles), pace };
+  }
+  const plan = endless ? null : (() => {
+    const r = options.shareSeed != null ? createRng(options.shareSeed >>> 0) : rng;
+    const kinds = Array.from({ length: 8 }, () => rollKind(r));
+    return options.shareSeed != null ? rng.shuffle(kinds) : kinds;
+  })();
+
   function beginThrow() {
     Thrower.planThrowerMove(st.thrower, rng, cam, WORLD.throwerZ, P.throwerSpreadX);
 
     const axis = norm([rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1)]);
+    const kind = plan ? plan[st.throwIndex % 8] : rollKind(rng);
+    const pace = kind.pace === 'normal' ? P : P.rare[kind.pace];
     st.shot = {
       color: nextColor(),
-      style: rng.weighted(P.styles),
+      style: kind.style,
+      pace: kind.pace,
       u: rng.range(-1, 1),
       v: rng.range(-1, 1),
-      T: rng.range(P.flightTimeSec) / st.speed,
-      rise: rng.range(P.arcHeightM),
+      T: rng.range(pace.flightTimeSec) / st.speed,
+      rise: rng.range(pace.arcHeightM),
       axis,
       spin: rng.range(P.spinRadPerSec) * rng.sign(),
       state: 'held',

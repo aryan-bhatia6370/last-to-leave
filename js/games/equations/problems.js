@@ -2,7 +2,9 @@
 // Each generator returns { lines: [math markup...], answer: [num, den], reveal: string }.
 // Markup: ^ for exponents, {a/b} for stacked fractions, √{n} for square roots (see shared/mathText.js).
 //   common     — mental math with exponents, fractions, roots, percents, order of operations
-//   rare       — algebra / geometry
+//   easy       — 2 + 2 level, for reaction time (rare)
+//   algebra    — fairly common
+//   geometry   — uncommon
 //   very rare  — calculus
 
 const M = '−'; // a real minus sign (looks better than a hyphen)
@@ -137,7 +139,33 @@ const VERY_RARE = [
   },
 ];
 
-export const TIERS = { common: COMMON, rare: RARE, veryRare: VERY_RARE };
+// quick reaction-time ones, 2 + 2 level
+const EASY = [
+  (r) => { const a = r.int(1, 9), b = r.int(1, 9); return { lines: [`${a} + ${b}`], answer: frac(a + b) }; },
+  (r) => { const b = r.int(1, 9), a = b + r.int(0, 9); return { lines: [`${a} ${M} ${b}`], answer: frac(a - b) }; },
+  (r) => { const a = r.int(2, 9), b = r.int(2, 5); return { lines: [`${a} × ${b}`], answer: frac(a * b) }; },
+  (r) => { const b = r.int(2, 5), q = r.int(1, 9); return { lines: [`${b * q} ÷ ${b}`], answer: frac(q) }; },
+];
+
+const MORE_ALGEBRA = [
+  // x/a + b = c
+  (r) => {
+    const a = r.int(2, 6), x = a * r.int(2, 9), b = r.int(1, 12);
+    return { lines: [`x/${a} + ${b} = ${x / a + b}`, 'x = ?'], answer: frac(x), reveal: `x = ${x}` };
+  },
+  // ax − b = cx + d
+  (r) => {
+    const c = r.int(1, 4), a = c + r.int(1, 4), x = r.int(2, 9), b = r.int(1, 15);
+    const d = (a - c) * x - b;
+    return { lines: [`${a}x ${M} ${b} = ${c === 1 ? '' : c}x ${d < 0 ? M : '+'} ${Math.abs(d)}`, 'x = ?'], answer: frac(x), reveal: `x = ${x}` };
+  },
+];
+
+// RARE = 4 algebra + 4 geometry kinds (see the comments above)
+const ALGEBRA = [RARE[0], RARE[1], RARE[6], RARE[7], ...MORE_ALGEBRA];
+const GEOMETRY = [RARE[2], RARE[3], RARE[4], RARE[5]];
+
+export const TIERS = { easy: EASY, common: COMMON, algebra: ALGEBRA, geometry: GEOMETRY, veryRare: VERY_RARE };
 
 /** Make `count` problems, never repeating a template within a game. */
 export function makeProblems(rng, count, weights) {

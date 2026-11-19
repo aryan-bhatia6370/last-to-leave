@@ -35,7 +35,7 @@ export function createThrowControl({ canvas, cfg, getCam, canThrow, onThrow, onW
       held.dragging = false;
       const f = flick.end(p);
       if (!canThrow()) return;
-      const fl = flickToVelocity(f, getCam().H, cfg);
+      const fl = flickToVelocity(withReleasePoint(f, p), getCam().H, cfg, getCam());
       if (fl) onThrow(fl); else onWeak?.();
     },
   });
@@ -43,22 +43,39 @@ export function createThrowControl({ canvas, cfg, getCam, canThrow, onThrow, onW
     held,
     /** Where the held object should be this frame (base = its resting spot in your hand). */
     heldPos(base, current, dt, maxLift = 0.2) {
-      const cam = getCam();
-      if (held.dragging && held.cur) {
-        const z = base[2];
-        const dx = held.cur.x - held.start.x;
-        const dy = held.cur.y - held.start.y;
-        return [
-          clamp(base[0] + (dx * z) / cam.f, -0.35, 0.35),
-          clamp(base[1] - (dy * z) / cam.f, base[1] - 0.12, base[1] + maxLift),
-          z,
-        ];
-      }
-      return lerp3(current, base, Math.min(1, dt * 12));
+      return heldFollow(getCam(), base, current, held, dt, maxLift);
     },
     cancel() { held.dragging = false; flick.cancel(); },
     destroy: detach,
   };
+}
+
+// On touch screens the object sits a little above your finger so you can see it.
+export const TOUCH_LIFT_PX = 50;
+const liftFor = (p) => (p?.type === 'touch' ? TOUCH_LIFT_PX : 0);
+
+/**
+ * While you hold the button/finger down, the object goes to where you're
+ * pointing (anywhere in a wide area at hand depth), so you can throw from any
+ * spot. Let go of a drag without a flick and it drifts back to your hand.
+ */
+export function heldFollow(cam, base, current, held, dt, maxLift = 0.2) {
+  if (held.dragging && held.cur) {
+    const z = base[2];
+    const halfW = cam.halfWidthAt(z) * 0.88;
+    const target = [
+      clamp(((held.cur.x - cam.cx) * z) / cam.f, -halfW, halfW),
+      clamp(((cam.cy - (held.cur.y - liftFor(held.cur))) * z) / cam.f, base[1] - 0.2, base[1] + maxLift * 1.6),
+      z,
+    ];
+    return lerp3(current, target, Math.min(1, dt * 28));
+  }
+  return lerp3(current, base, Math.min(1, dt * 12));
+}
+
+/** Add where the object was let go (screen px) to a flick, for perspective aiming. */
+export function withReleasePoint(f, p) {
+  return f && p ? { ...f, hx: p.x, hy: p.y - liftFor(p) } : f;
 }
 
 export function createFlickTracker(sampleMs = 90) {
@@ -102,12 +119,21 @@ export function createFlickTracker(sampleMs = 90) {
  * cfg: { minUpSpeed, minDragFrac, powerScale, powerExp, minSpeed, maxSpeed, aimGain, elevationDeg }
  * Power is measured in screen-heights per second, so it feels the same on any screen.
  */
-export function flickToVelocity(f, screenH, cfg) {
+export function flickToVelocity(f, screenH, cfg, cam = null) {
   if (!f) return null;
   const upH = -f.vy / screenH;
   if (upH < cfg.minUpSpeed || -f.dy < cfg.minDragFrac * screenH) return null;
   const speed = clamp(cfg.powerScale * Math.pow(upH, cfg.powerExp), cfg.minSpeed, cfg.maxSpeed);
-  const yawTan = clamp((f.vx / -f.vy) * cfg.aimGain, -0.9, 0.9);
+  let yawTan;
+  if (cam && f.hx != null) {
+    // Aim where the flick points on screen: follow the flick's line from where you let
+    // go up to the horizon; the throw heads toward that spot (so a straight-up flick
+    // from the far left goes up the left side, like it looks like it should).
+    const xh = f.hx + (f.hy - cam.cy) * (f.vx / -f.vy) * (cfg.aimGain / 0.5);
+    yawTan = clamp((xh - cam.cx) / cam.f, -0.9, 0.9);
+  } else {
+    yawTan = clamp((f.vx / -f.vy) * cfg.aimGain, -0.9, 0.9);
+  }
   const el = (cfg.elevationDeg * Math.PI) / 180;
   const horiz = speed * Math.cos(el);
   const L = Math.hypot(1, yawTan);
@@ -144,3 +170,33 @@ export function spinBasis(b, w, h) {
   b.n = norm(cross(b.u, b.r));
   b.u = norm(cross(b.r, b.n));
 }
+
+/**
+ * Thrown things bounce off Paul instead of passing through him. He's a rough
+ * upright capsule (narrower at the head). body: { p, v } in game coords.
+ * paul: { x, z, floorY }. Returns true if it hit him this step.
+ */
+export const PAUL_BODY = { radius: 0.19, headRadius: 0.11, headFrom: 1.5, height: 1.8, restitution: 0.3 };
+export function bounceOffPaul(b, paul) {
+  const h = b.p[1] - paul.floorY;
+  if (h < 0 || h > PAUL_BODY.height) return false;
+  const r = h > PAUL_BODY.headFrom ? PAUL_BODY.headRadius : PAUL_BODY.radius;
+  const dx = b.p[0] - paul.x, dz = b.p[2] - paul.z;
+  const d = Math.hypot(dx, dz);
+  if (d >= r) return false;
+  const n = d > 1e-4 ? [dx / d, 0, dz / d] : [0, 0, -1];
+  b.p = [paul.x + n[0] * (r + 0.004), b.p[1], paul.z + n[2] * (r + 0.004)];
+  const vn = b.v[0] * n[0] + b.v[2] * n[2];
+  if (vn < 0) {
+    const k = 1 + PAUL_BODY.restitution;
+    b.v = [b.v[0] - k * vn * n[0], b.v[1] * 0.6, b.v[2] - k * vn * n[2]];
+  }
+  return true;
+}
+
+/**
+ * How far left/right (as a fraction of depth) is visible on ANY screen, phone
+ * or PC. Targets are placed inside this so everyone gets the same spots in
+ * online/Competition games, whatever their screen shape.
+ */
+export const SAFE_HALF_WIDTH = 0.38;

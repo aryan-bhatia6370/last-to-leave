@@ -14,14 +14,24 @@
 ## The games (menu order)
 | # | Game | Variants | Phase |
 |---|------|----------|-------|
-| 1 | Marker Catching | Regular, Bullet toggle, Endless toggle (can combine) | 1 ✅ |
-| 2 | Pictionary | 3 rounds, 40 s timer, wrong guess = −4 s; black marker draws the sketch live (40 built-in sketches + your own from the drawing board `#/draw`); fuzzy answer matching | 5 ✅ |
-| 3 | Equations | 3 rounds, 45 s timer, wrong = −5 s; board flips to reveal; 80% mental math / 17% algebra-geometry / 3% calculus | 5 ✅ |
-| 4 | Archery | Foam Nevada (green, large), Wyoming (purple, medium), Connecticut (red, small) thrown at a handheld classroom whiteboard that **Paul holds up**, somewhere new and sometimes angled every throw; Wind toggle | 2 ✅ (Paul added in 6) |
-| 5 | Bowling | Yellow-black eraser vs 3 standing markers (unique colors per game), 3 throws, max 9; Wind toggle; Hard mode (black=1, orange=2, purple=3 in separate spots; one throw scores at most 3); Hard and Wind combine | 3 ✅ |
-| 6 | Paul's Pocket | Pick 1 of 8 markers off the bench; Paul's hand (Caucasian, khaki trousers, arms/legs only) scoops them into his pocket, scrambles, pulls one out; 1-in-8 luck | 6 ✅ |
-| 7 | Cup Catching | Hold a red solo cup at waist height (follows mouse/finger; up/down moves it farther from / closer to your body, 0.5–2 m) and catch lobbed markers through the top; Paul always aims inside that reach; rim bounces; whipping the cup sloshes markers out; Endless (ends on 3 misses in a row or a spill; cup gets crowded); no Bullet | 4 ✅ |
-| 8 | Cup Throwing | Throw all 8 markers into a standing cup; fixed cup or moving cup; thrown markers stay where they land; hardest game (~3/8 avg); **Paul holds the cup** at his hip (`cup.heldByPaul` in config; false = cup on the floor) | 3 ✅ |
+| 1 | Marker Catching | Regular, Bullet toggle, Endless toggle (can combine). Regular: ~3% much-faster and ~3% much-slower throws (`regular.rare`). Online: everyone gets the same set of throw kinds (`options.shareSeed`) in their own order/spots | 1 ✅ |
+| 2 | Pictionary | 3 rounds; offline clock runs out 5–10 s after the sketch finishes, wrong guess = −5 s. Competition/online: no clock, wrong guess = 5 s wait, new drawing 30 s after the sketch if nobody gets it. Paul's arm reaches over the board, see-through. 112 sketches (`drawings.js` + `drawings2.js`, incl. school + Last to Leave ones) + your own (`#/draw`); offline skips the last 40 seen | 5 ✅ |
+| 3 | Equations | 3 rounds; offline 20 s, wrong = −5 s; Competition/online: no clock, wrong = 5 s wait, new problem after 60 s. Mix: 63% mental math / 25% algebra / 6% geometry / 3% super easy / 3% calculus | 5 ✅ |
+| 4 | Archery | Foam Nevada/Wyoming/Connecticut at a handheld whiteboard **Paul holds up**, somewhere new every throw; Wind toggle; **Hotspots** toggle (orange bonus zone each throw: board 1 pt, zone 2 pts, max 6, pass 3; never more than half the board) | 2 ✅ |
+| 5 | Bowling | Yellow-black eraser vs 3 standing markers, 3 throws, max 9; Wind; Hard (1/2/3 pts); the eraser hops a little on landing; **Eraser: flat / on its side** button (or F) while aiming | 3 ✅ |
+| 6 | Paul's Pocket | Pick 1 of 8 markers; Paul scoops them into his khaki pocket, scrambles, pulls one out; 1-in-8 luck. Phones/touch: big color buttons to pick with | 6 ✅ |
+| 7 | Cup Catching | Red solo cup at waist height (up/down = farther/closer, 0.5–2 m); slower, steadier lobs than Marker Catching; midday sun so marker shadows fall under them; the cup tips a little toward an incoming marker; jerking the cup flings markers out (loses them; easier when fuller); Endless: Paul empties the cup at 8 (still counted), any spill or 3 misses in a row ends it | 4 ✅ |
+| 8 | Cup Throwing | Throw all 8 markers into a cup **Paul holds** at his hip (`cup.heldByPaul`); fixed or moving cup; markers stay where they land; hardest game (~2–3/8 avg) | 3 ✅ |
+
+## Throwing games (Archery, Bowling, Cup Throwing, and any future ones)
+- Press anywhere: the held object goes to your pointer (wide area, `heldFollow` in shared/throwing.js), so you can throw from any spot.
+- Aim follows the flick's on-screen line to the horizon (`flickToVelocity` with the release point), so a straight-up flick from the left goes up the left.
+- Throwing far takes a harder flick (powerScale lowered after playtest). Wind is stronger (Archery 2.8, Bowling 3.0).
+- Thrown things bounce off Paul (`bounceOffPaul`) and he flinches a little (`flinch` in paul3d).
+- Targets are placed within `SAFE_HALF_WIDTH` (visible on every screen) so online players all get identical spots, wind and boards (same seed; outcome-dependent randomness uses `luck`).
+
+## Records versions
+- `rv` per game in `games/registry.js`. Bump it when a game changes enough that old bests don't compare: old bests are then ignored locally and in the cloud. Leaderboard boards have their own `v` in `core/leaderboard.js` (board id gets `.v2`), which starts that board fresh. Last reset: 2026-11-18 (all games except Paul's Pocket; the three Endless boards).
 
 ## The real setting (use this for theming)
 - **The table:** a square, perforated (expanded-metal) outdoor picnic table with four separate benches, one on each side, and a black tube frame. It's painted **dark purple, close to black**.
@@ -61,7 +71,9 @@
   - `page.js`: lobby (pick an untaken character, host sets computers 0–7 and versions) and the run view (reuses tableScene + playTurn). Online turns can't be paused.
   - **Live spectating** (`mirror.js`): the player's game `st` is sent ~10×/s as JSON text to `live/{turnKey}`; watchers run the same game with `options.spectate = receiver`, which copies the blended state into `st` instead of simulating (each game has a 3-line hook + `state()` on its instance). About 1.3 KB per update.
   - Races (Pictionary/Equations): every real player plays the board at once; reports `{solved, t}`; the host picks the fastest (computer times are simulated), with a 4 s grace for late reports.
-  - `performance.js`: each round 0–100 = percentile vs an average simulated player for that game/version (races: solve time; never solved = 0); run score = average, one decimal. Online leaderboards (3+ real players) are written at the end of the run by each player (`recordOnlineRun`).
+  - `performance.js`: 70% rounds (each = half standing vs the others that round + half quality vs a typical player for that game; races: order you got safe + solve speed) + 30% where you finished. 0–100, one decimal. Shown for every real player on the results screen. Online leaderboards (3+ real players) are written at the end of the run by each player (`recordOnlineRun`).
+  - Lobby: everyone must pick a seat and press **Ready** before the host can Start. When all real players are out, anyone can **Speed up** (4×) or **Skip to results** (`requests/{uid}`).
+  - Computer players: `BOTS` in competition/engine.js (per-turn form so scores vary; targets from the playtest notes).
 - **Build order:** Phase 8 = Competition Mode solo vs computers. Phase 9 = Google accounts + cloud scores (Firebase; the user creates the Firebase project in their own Google account and Claude walks them through it). Phase 10 = online rooms with live spectating.
 
 ## Phase plan

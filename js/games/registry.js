@@ -1,9 +1,12 @@
 // Every minigame on the site, in menu order. A game with `load` is playable;
 // the rest show as "Coming in Phase N" on the menu. `variants` lists every
 // mode combination (used by Records without loading the game itself).
+// `rv` = records version: bump it when a game changes enough that old best
+// scores aren't comparable any more (old bests are then ignored, here and in the cloud).
 export const GAMES = [
   {
     id: 'marker-catching',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'bullet', label: 'Bullet' }, { id: 'endless', label: 'Endless' }, { id: 'bullet-endless', label: 'Bullet + Endless' }],
     name: 'Marker Catching',
     color: 'red',
@@ -13,6 +16,7 @@ export const GAMES = [
   },
   {
     id: 'pictionary',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'mine', label: 'With my drawings' }],
     name: 'Pictionary',
     color: 'black',
@@ -22,6 +26,7 @@ export const GAMES = [
   },
   {
     id: 'equations',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }],
     name: 'Equations',
     color: 'blue',
@@ -31,7 +36,8 @@ export const GAMES = [
   },
   {
     id: 'archery',
-    variants: [{ id: 'regular', label: 'Regular' }, { id: 'wind', label: 'Wind' }],
+    rv: 2,
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'wind', label: 'Wind' }, { id: 'zones', label: 'Hotspots' }, { id: 'zones-wind', label: 'Hotspots + Wind' }],
     name: 'Archery',
     color: 'green',
     blurb: 'Throw foam Nevada, Wyoming and Connecticut at a whiteboard.',
@@ -40,6 +46,7 @@ export const GAMES = [
   },
   {
     id: 'bowling',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'hard', label: 'Hard' }, { id: 'wind', label: 'Wind' }, { id: 'hard-wind', label: 'Hard + Wind' }],
     name: 'Bowling',
     color: 'orange',
@@ -49,6 +56,7 @@ export const GAMES = [
   },
   {
     id: 'pauls-pocket',
+    rv: 1,
     variants: [{ id: 'regular', label: 'Regular' }],
     name: "Paul's Pocket",
     color: 'brown',
@@ -58,6 +66,7 @@ export const GAMES = [
   },
   {
     id: 'cup-catching',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'endless', label: 'Endless' }],
     name: 'Cup Catching',
     color: 'pink',
@@ -67,6 +76,7 @@ export const GAMES = [
   },
   {
     id: 'cup-throwing',
+    rv: 2,
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'moving', label: 'Moving Cup' }],
     name: 'Cup Throwing',
     color: 'purple',
@@ -75,3 +85,6 @@ export const GAMES = [
     load: () => import('./cup-throwing/index.js'),
   },
 ];
+
+/** Records version of a game (1 when unknown, e.g. 'competition'). */
+export const recordsVersion = (gameId) => GAMES.find((g) => g.id === gameId)?.rv ?? 1;

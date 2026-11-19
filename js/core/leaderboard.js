@@ -34,9 +34,9 @@ export const CATEGORIES = [
 ];
 
 export const BOARDS = {
-  'endless-catch': { label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
-  'endless-bullet': { label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
-  'endless-cup': { label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
+  'endless-catch': { v: 2, label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
+  'endless-bullet': { v: 2, label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
+  'endless-cup': { v: 2, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
   'comp-wins': { label: 'Total wins', note: 'Offline + online', type: 'count', unit: 'wins' },
   'comp-wins-offline': { label: 'Offline wins', note: '3+ players at the table (you + 2 computers or more)', type: 'count', unit: 'wins' },
   'comp-wins-online': { label: 'Online wins', note: 'Online rooms with 3+ real players', type: 'count', unit: 'wins' },
@@ -56,7 +56,8 @@ export function weekKey(date = new Date()) {
   const d = new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day - dow));
   return `w${d.toISOString().slice(0, 10)}`;
 }
-const boardId = (period, kind) => `${period}~${kind}`;
+// A board's `v` > 1 starts it fresh (the game changed): its id gets '.v2' etc.
+const boardId = (period, kind) => `${period}${(BOARDS[kind]?.v ?? 1) > 1 ? `.v${BOARDS[kind].v}` : ''}~${kind}`;
 
 // ---------- writing ----------
 async function addWin(kinds) {

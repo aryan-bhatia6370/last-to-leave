@@ -9,7 +9,7 @@ import { createRng } from '../../core/rng.js';
 import { createCanvas } from '../../core/canvas.js';
 import { MARKER_COLORS, COLOR_BY_ID } from '../../shared/colors.js';
 import { createCamera, renderRoom } from '../../shared/scene3d.js';
-import { createThrowControl, stepBody, spinBasis } from '../../shared/throwing.js';
+import { createThrowControl, stepBody, spinBasis, bounceOffPaul, SAFE_HALF_WIDTH } from '../../shared/throwing.js';
 import { createWind } from '../../shared/wind.js';
 import { createPopups, drawLabel, drawFlickHint, drawDebugBox } from '../../shared/hud.js';
 import { drawEraser, drawRodMarker, drawFloorShadow } from '../../shared/objects3d.js';
@@ -66,6 +66,8 @@ export function createBowling(container, host) {
     everThrew: false,
     lastFlick: null,
     finished: false,
+    paulFlinch: 0,
+    sideways: false, // the eraser stood on its end (toggle while aiming)
   };
 
   let cam = null;
@@ -73,6 +75,22 @@ export function createBowling(container, host) {
   const stage = createStage3D(container, { onResize, getCam: () => cam });
   const view = stage.hud;
   const { ctx } = view;
+  // Flip the eraser between flat and on its side while you get ready.
+  const flipBtn = document.createElement('button');
+  flipBtn.className = 'btn btn-small bowl-flip';
+  flipBtn.type = 'button';
+  const flipLabel = () => { flipBtn.textContent = st.sideways ? 'Eraser: on its side' : 'Eraser: flat'; };
+  flipLabel();
+  flipBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+  flipBtn.addEventListener('click', () => {
+    if (host.options?.spectate || (st.phase !== 'aim' && st.phase !== 'reset' && st.phase !== 'ready')) return;
+    st.sideways = !st.sideways;
+    flipLabel();
+  });
+  container.appendChild(flipBtn);
+  const onFlipKey = (e) => { if (e.key === 'f' || e.key === 'F') flipBtn.click(); };
+  window.addEventListener('keydown', onFlipKey);
+
   const control = createThrowControl({
     canvas: view.canvas,
     cfg: C.throw,
@@ -103,7 +121,7 @@ export function createBowling(container, host) {
   function placeRegular() {
     const R = C.regular;
     const z = rng.range(R.distance);
-    const x = rng.range(-1, 1) * cam.halfWidthAt(z) * R.offsetFrac;
+    const x = rng.range(-1, 1) * z * SAFE_HALF_WIDTH * R.offsetFrac; // same spot on every screen
     st.markers = [
       makeMarker(colors[0], x, z),
       makeMarker(colors[1], x - R.spacingX, z + R.spacingZ),
@@ -115,7 +133,7 @@ export function createBowling(container, host) {
     let best = null;
     for (let i = 0; i < 40; i++) {
       const z = rng.range(tier.distance);
-      const x = rng.range(-1, 1) * cam.halfWidthAt(z) * tier.offsetFrac;
+      const x = rng.range(-1, 1) * z * SAFE_HALF_WIDTH * tier.offsetFrac;
       best = makeMarker(COLOR_BY_ID[tier.color], x, z, { tier });
       if (others.every((o) => Math.hypot(o.base[0] - x, o.base[2] - z) > C.hard.minGap)) break;
     }
@@ -178,7 +196,16 @@ export function createBowling(container, host) {
   }
 
   // ---------- eraser ----------
+  // st.sideways: the eraser stood up on its end (portrait): logo side facing left, felt facing right.
   function heldBasis() {
+    if (st.sideways) {
+      let r = rotateAround([0, 1, 0], [1, 0, 0], -0.35); // length up, leaning toward you a bit
+      let u = [-1, 0, 0];
+      const sway = Math.sin(st.time * 1.7) * 0.05;
+      r = rotateAround(r, [0, 0, 1], sway);
+      u = rotateAround(u, [0, 0, 1], sway);
+      return { r, u, n: norm(cross(u, r)) };
+    }
     let r = [1, 0, 0];
     let u = rotateAround([0, 1, 0], r, -0.55); // tipped toward you so you see the handle
     const sway = Math.sin(st.time * 1.7) * 0.05;
@@ -194,9 +221,10 @@ export function createBowling(container, host) {
       p: st.held.slice(),
       v: fl.v,
       ...b,
-      w: add(mul(b.u, spin), mul(b.r, spin * 0.25)),
+      w: st.sideways ? add(mul(b.r, spin * 0.6), mul(b.u, spin * 0.15)) : add(mul(b.u, spin), mul(b.r, spin * 0.25)),
+      sideways: st.sideways,
       onFloor: false,
-      bounced: false,
+      bounces: 0,
       flat: false,
       settled: false,
     };
@@ -207,10 +235,11 @@ export function createBowling(container, host) {
   }
 
   function flatten(e, h) {
-    const up = dot(e.u, [0, 1, 0]) >= 0 ? [0, 1, 0] : [0, -1, 0];
-    const axis = cross(e.u, up);
+    const k = e.sideways ? e.n : e.u; // flat: handle up; on its side: it tips over onto a long side
+    const up = dot(k, [0, 1, 0]) >= 0 ? [0, 1, 0] : [0, -1, 0];
+    const axis = cross(k, up);
     const sinA = len(axis);
-    const angle = Math.atan2(sinA, dot(e.u, up));
+    const angle = Math.atan2(sinA, dot(k, up));
     if (angle < 0.02 || sinA < 1e-5) { e.flat = true; return; }
     const ax = mul(axis, 1 / sinA);
     const a = Math.min(angle, h * 14);
@@ -219,22 +248,26 @@ export function createBowling(container, host) {
     e.n = norm(cross(e.u, e.r));
   }
 
+  const PAUL_SPOT = { x: 1.9, z: 6.4, floorY: FLOOR }; // Paul watching from the side
   function stepEraser(e, dt) {
     const steps = Math.max(1, Math.ceil(dt * 240));
     const h = dt / steps;
-    const rest = FLOOR + EH / 2;
+    const rest = FLOOR + (e.sideways ? ER.width / 2 : EH / 2);
     for (let i = 0; i < steps && !e.settled; i++) {
+      if (bounceOffPaul(e, PAUL_SPOT) && !e.hitPaul) { e.hitPaul = true; st.paulFlinch = 1; }
       if (!e.onFloor) {
         stepBody(e, h, { gravity: W.gravity, drag: ER.drag, wind: wind.vec });
         spinBasis(e, e.w, h);
         if (e.p[1] < rest) {
           e.p[1] = rest;
-          if (e.v[1] < -1.2 && !e.bounced) {
-            e.v = [e.v[0] * ER.landKeep, -e.v[1] * ER.bounce, e.v[2] * ER.landKeep];
-            e.w = mul(e.w, 0.4);
-            e.bounced = true;
+          if (e.v[1] < -0.8 && e.bounces < ER.maxBounces) {
+            // a small hop: loses some speed each time, hops lower and lower
+            const keep = e.bounces ? 0.88 : ER.landKeep;
+            e.v = [e.v[0] * keep, -e.v[1] * ER.bounce * (1 - e.bounces * 0.25), e.v[2] * keep];
+            e.w = mul(e.w, 0.5);
+            e.bounces++;
           } else {
-            const keep = e.bounced ? 1 : ER.landKeep;
+            const keep = e.bounces ? 1 : ER.landKeep;
             e.v = [e.v[0] * keep, 0, e.v[2] * keep];
             e.w = [0, 0, 0];
             e.onFloor = true;
@@ -242,7 +275,7 @@ export function createBowling(container, host) {
         }
       } else {
         const vh = Math.hypot(e.v[0], e.v[2]);
-        const dec = ER.friction * W.gravity * h;
+        const dec = (e.sideways ? ER.sideFriction : ER.friction) * W.gravity * h;
         e.v = vh <= dec ? [0, 0, 0] : [e.v[0] * (vh - dec) / vh, 0, e.v[2] * (vh - dec) / vh];
         e.p = add(e.p, mul(e.v, h));
         e.p[1] = rest;
@@ -341,6 +374,7 @@ export function createBowling(container, host) {
   }
 
   function update(dt) {
+    st.paulFlinch = Math.max(0, st.paulFlinch - dt * 3);
     st.time += dt;
     wind.update(dt);
     popups.update(dt);
@@ -481,7 +515,7 @@ export function createBowling(container, host) {
   createEraser3D(ER).then((g) => { thrown3d = g; held3d = g.clone(); stage.scene.add(thrown3d, held3d); });
 
   function sync3D() {
-    paul3d.update({ x: 1.9, z: 6.4, floorY: FLOOR, yaw: 0.35 });
+    paul3d.update({ ...PAUL_SPOT, yaw: 0.35, flinch: st.paulFlinch });
     for (const mesh of markerMeshes.values()) mesh.visible = false;
     for (const m of st.markers) {
       let mesh = markerMeshes.get(m);
@@ -542,6 +576,8 @@ export function createBowling(container, host) {
     destroy() {
       loop.stop();
       control.destroy();
+      flipBtn.remove();
+      window.removeEventListener('keydown', onFlipKey);
       stage.destroy();
     },
   };

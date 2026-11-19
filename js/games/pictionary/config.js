@@ -4,8 +4,10 @@
 export const CONFIG = {
   rounds: 3,
   passScore: 2,            // drawings guessed (out of 3) to survive
-  roundSeconds: 40,        // time per drawing (the sketch keeps being drawn while you guess)
-  wrongPenaltySec: 4,      // each wrong guess eats this much of the clock
+  afterDrawSec: [5, 10],   // offline: the clock runs out this long after Paul finishes the sketch
+  wrongPenaltySec: 5,      // offline: each wrong guess eats this much of the clock
+  raceLockoutSec: 5,       // Competition/online (no clock): wait this long after a wrong guess
+  raceNewBoardSec: 30,     // Competition/online: nobody got it this long after the sketch is done -> new drawing
   penSpeed: 30,            // drawing speed, in board units (the board is 100 across) per second
   minDrawSec: 9,           // even simple sketches take at least this long...
   maxDrawSec: 20,          // ...and big ones never take longer than this

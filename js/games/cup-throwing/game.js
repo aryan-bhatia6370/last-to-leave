@@ -8,7 +8,7 @@ import { createRng } from '../../core/rng.js';
 import { createCanvas } from '../../core/canvas.js';
 import { MARKER_COLORS } from '../../shared/colors.js';
 import { createCamera, renderRoom } from '../../shared/scene3d.js';
-import { createThrowControl, stepBody, spinBasis } from '../../shared/throwing.js';
+import { createThrowControl, stepBody, spinBasis, bounceOffPaul, SAFE_HALF_WIDTH } from '../../shared/throwing.js';
 import { createPopups, drawLabel, drawFlickHint, drawDebugBox, drawBadge } from '../../shared/hud.js';
 import { drawCup, clipToCupOpening, drawRodMarker, drawFloorShadow } from '../../shared/objects3d.js';
 import { drawMarker } from '../../shared/marker.js';
@@ -70,6 +70,7 @@ export function createCupThrowing(container, host) {
     lastFlick: null,
     paulWalk: 0,
     paulMoving: 0,
+    paulFlinch: 0,
     finished: false,
   };
 
@@ -102,7 +103,7 @@ export function createCupThrowing(container, host) {
 
   function randomSpot() {
     const z = rng.range(C.spot.distance);
-    const x = rng.range(-1, 1) * cam.halfWidthAt(z) * C.spot.offsetFrac;
+    const x = rng.range(-1, 1) * z * SAFE_HALF_WIDTH * C.spot.offsetFrac; // same spot on every screen
     return { x, z };
   }
 
@@ -216,8 +217,10 @@ export function createCupThrowing(container, host) {
     const steps = Math.max(1, Math.ceil(dt * 240));
     const h = dt / steps;
     const rest = FLOOR + MR;
+    const paulSpot = HELD ? paulPose() : null;
     for (let i = 0; i < steps && !m.settled && !m.inCup; i++) {
       const prev = m.p;
+      if (paulSpot && bounceOffPaul(m, paulSpot) && !m.hitPaul) { m.hitPaul = true; st.paulFlinch = 1; }
       if (!m.onFloor) {
         stepBody(m, h, { gravity: W.gravity, drag: C.marker.drag });
         spinBasis(m, m.w, h);
@@ -324,6 +327,7 @@ export function createCupThrowing(container, host) {
   }
 
   function update(dt) {
+    st.paulFlinch = Math.max(0, st.paulFlinch - dt * 3);
     st.time += dt;
     popups.update(dt);
     for (const m of st.floorMarkers) if (!m.settled) stepMarker(m, dt);
@@ -373,7 +377,7 @@ export function createCupThrowing(container, host) {
   function paulPose() {
     const c = st.cup;
     return {
-      x: c.x - C.paul.sideOffset, z: c.z + C.paul.behindCup, floorY: FLOOR, yaw: 0, walk: st.paulWalk, moving: st.paulMoving,
+      x: c.x - C.paul.sideOffset, z: c.z + C.paul.behindCup, floorY: FLOOR, yaw: 0, walk: st.paulWalk, moving: st.paulMoving, flinch: st.paulFlinch,
       rightHand: [c.x + CUP.rimRadius * 0.55, CUP_BASE_Y + CUP.height * 0.45, c.z + 0.035],
     };
   }

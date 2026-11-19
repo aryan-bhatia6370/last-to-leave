@@ -11,7 +11,7 @@ export const CONFIG = {
 
   endless: {
     missesInARow: 3,       // this many misses in a row ends the run
-    capacity: 18,          // the cup gets more crowded as it fills (see cup.crowdShrink)
+    capacity: 8,           // at 8 Paul empties the cup (they still count) and you keep going
     speedRampPerCatch: 0.02,
     maxSpeedMult: 1.5,
     passScore: 8,
@@ -22,6 +22,7 @@ export const CONFIG = {
     fovYDeg: 62,
     throwerZ: [3.6, 4.6],   // close enough that lobs drop down into the cup
     backWallZ: 7.5,
+    sunElevationDeg: 78,   // midday sun: a falling marker's shadow lands almost right under it (natural depth cue)
   },
 
   // You hold the cup at hand height and move it around on a level plane:
@@ -40,7 +41,9 @@ export const CONFIG = {
     inRadius: 0.07,        // marker center within this of the middle as it drops past the rim = in
     rimZone: 0.028,        // just outside the rim: bounces off the rim, might rattle in
     rattleInChance: 0.4,   // best-case chance a rim hit drops in
-    crowdShrink: 0.45,     // a full cup's opening is this much smaller (markers already in the way)
+    crowdShrink: 0.25,     // a full cup's opening is this much smaller (markers already in the way)
+    tiltTowardDeg: 16,     // you tip the cup a little toward an incoming marker...
+    tiltStartSec: 0.6,     // ...starting this long before it arrives
   },
 
   // Your hand. The cup chases your mouse/finger (higher = snappier).
@@ -49,23 +52,27 @@ export const CONFIG = {
     touchOffsetPx: 70,     // on touch screens the cup sits above your finger so you can see it
   },
 
-  // Whipping the cup around can slosh markers out.
+  // Jerking the cup around flings markers out (not random: it happens when the cup
+  // speeds up or stops sharply, and more easily the fuller it is). Not in Endless,
+  // where any spill ends the run.
   spill: {
-    safeSpeed: 4.0,        // m/s of cup movement that's always safe (a quick dash across the screen peaks ~3, a wild lunge ~8)
-    ratePerMps: 0.6,       // spill chance per second, per m/s over the safe speed...
-    fullnessBoost: 1.5,    // ...multiplied up as the cup fills
+    jerkAccel: 26,         // m/s² of sudden cup acceleration that flings one out with 1 marker in...
+    perMarker: 1.6,        // ...this much less per extra marker in the cup...
+    minAccel: 14,          // ...but never below this
+    cooldownMs: 350,       // at most one marker per jerk
+    safeSpeed: 4.0,        // (used for the cup's wobble look)
   },
 
   marker: { length: 0.14, width: 0.019 },
 
   // Throws: like Marker Catching, but lobbed higher so they come down into the cup.
   throws: {
-    flightTimeSec: [0.95, 1.35],
+    flightTimeSec: [1.25, 1.5], // slower and steadier than Marker Catching (0.85–1.3)
     arcHeightM: [0.9, 1.4], // high lobs: markers come down at ~50–60°, not flat
     windupMs: [380, 520],
     gapMs: [500, 1000],
-    targetZ: [0.6, 1.8],   // where throws come down (distance from you), always inside your reach
-    targetSpreadX: 0.75,   // how far left/right throws can land (0..1 of the reachable width)
+    targetZ: [0.7, 1.6],   // where throws come down (distance from you), always inside your reach
+    targetSpreadX: 0.65,   // how far left/right throws can land (0..1 of the reachable width)
     throwerSpreadX: 0.8,
     spinRadPerSec: [4, 12],
     styles: { overhand: 0.35, sidearm: 0.25, underhand: 0.4 },

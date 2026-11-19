@@ -84,7 +84,8 @@ export function startReferee(code, getRoom) {
     const present = (p) => p.cpu || !!room.presence?.[p.uid];
     const r = Math.max(0, (run.round || 1) - 1); // index of the current round
     const next = (step) => ({ 'run/step': { ...step, id: s.id + 1 } });
-    const fmt = (gid, sc) => { const m = maxScoreFor(gid); return m != null ? `${sc}/${m}` : `${sc}`; };
+    const T = (ms) => (run.fast ? ms * 0.25 : ms); // "Speed up": everything 4x faster
+    const fmt = (gid, sc) => { const m = maxScoreFor(gid, s.variant); return m != null ? `${sc}/${m}` : `${sc}`; };
 
     // 1) disconnected players: after REF.awayMs a computer takes their seat
     const awayPatch = {};
@@ -102,7 +103,15 @@ export function startReferee(code, getRoom) {
     }
     if (Object.keys(awayPatch).length) return write(awayPatch);
 
-    // 2) the current step
+    // 2) everyone real is out and only computers are left: players can speed it up or skip
+    const humansIn = Object.values(P).some((p) => p.alive && !p.cpu);
+    const reqs = Object.values(room.requests || {});
+    if (!humansIn && s.kind !== 'done') {
+      if (reqs.includes('skip')) return skipToEnd();
+      if (reqs.includes('fast') && !run.fast) return write({ 'run/fast': true });
+    }
+
+    // 3) the current step
     switch (s.kind) {
       case 'intro':
       case 'out':
@@ -135,7 +144,7 @@ export function startReferee(code, getRoom) {
       const vLabel = game.variants.find((v) => v.id === variant)?.label ?? 'Regular';
       const isFinal = ids.length === 2;
       return write({
-        ...next({ kind: 'announce', game: game.id, variant, contenders: ids, race: isRaceGame(game.id), until: now + REF.announceMs }),
+        ...next({ kind: 'announce', game: game.id, variant, contenders: ids, race: isRaceGame(game.id), until: now + T(REF.announceMs) }),
         'run/round': round + 1,
         'run/history': [...history, game.id],
         [`run/rounds/${round}`]: { kind: isRaceGame(game.id) ? 'race' : 'scored', game: game.id, variant, players: ids },
@@ -177,7 +186,7 @@ export function startReferee(code, getRoom) {
       }
       const p = P[cur];
       if (p.cpu) {
-        if (!s.cpuAt) return write({ 'run/step/cpuAt': now + REF.cpuTurnMs[0] + Math.random() * (REF.cpuTurnMs[1] - REF.cpuTurnMs[0]) });
+        if (!s.cpuAt) return write({ 'run/step/cpuAt': now + T(REF.cpuTurnMs[0] + Math.random() * (REF.cpuTurnMs[1] - REF.cpuTurnMs[0])) });
         if (now < s.cpuAt) return;
         return recordScore(cur, simulateScore(s.game, s.variant, p.skill || 1, createRng(newSeed())));
       }
@@ -188,7 +197,7 @@ export function startReferee(code, getRoom) {
     function recordScore(id, score) {
       return write({
         'run/step/results': { ...(s.results || {}), [id]: score },
-        'run/step/nextAt': now + REF.afterTurnMs,
+        'run/step/nextAt': now + T(REF.afterTurnMs),
         [`run/statusText/${id}`]: fmt(s.game, score),
         'run/msg': `${name(id)}: ${fmt(s.game, score)}`,
       });
@@ -204,7 +213,7 @@ export function startReferee(code, getRoom) {
       for (const id of s.contenders) patch[`run/statusText/${id}`] = low.includes(id) ? 'REPLAY' : 'SAFE';
       return write({
         ...patch,
-        ...next({ kind: 'tie', game: s.game, variant: s.variant, contenders: low, tieN: (s.tieN || 0) + 1, until: now + REF.tieMs }),
+        ...next({ kind: 'tie', game: s.game, variant: s.variant, contenders: low, tieN: (s.tieN || 0) + 1, until: now + T(REF.tieMs) }),
         'run/current': null,
         'run/msg': `Tie for lowest: ${names}! Only they go again.`,
       });
@@ -215,7 +224,7 @@ export function startReferee(code, getRoom) {
       const cpuTimes = {};
       for (const id of pool) if (P[id].cpu) cpuTimes[id] = simulateSolveTime(s.game, P[id].skill || 1, rng);
       const patch = {
-        ...next({ kind: 'race', game: s.game, variant: s.variant, pool, board, raceKey: `r${r}b${board}`, seed: newSeed(), startAt: now + REF.raceLeadMs, cpuTimes }),
+        ...next({ kind: 'race', game: s.game, variant: s.variant, pool, board, raceKey: `r${r}b${board}`, seed: newSeed(), startAt: now + T(REF.raceLeadMs), cpuTimes }),
         'run/current': null,
         'run/msg': `Board ${board}: first to get it is safe. ${pool.length} still racing.`,
       };
@@ -238,7 +247,7 @@ export function startReferee(code, getRoom) {
       else decide ||= pending.length === 0 && el > 1.5;
       if (!decide) return;
       if (min == null) {
-        return write({ ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: s.pool, board: s.board + 1, until: now + REF.nextBoardMs }), 'run/msg': 'Nobody got it. New board!' });
+        return write({ ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: s.pool, board: s.board + 1, until: now + T(REF.nextBoardMs) }), 'run/msg': 'Nobody got it. New board!' });
       }
       const [winner, t] = cand.sort((a, b) => a[1] - b[1])[0];
       const patch = {
@@ -247,20 +256,64 @@ export function startReferee(code, getRoom) {
         'run/msg': `${name(winner)} got it. Safe!`,
       };
       if (s.board === 1) patch[`run/rounds/${r}/first`] = winner;
+      patch[`run/rounds/${r}/safe/b${s.board}`] = winner; // order players got safe (performance score)
       const rest = s.pool.filter((id) => id !== winner);
-      if (rest.length > 1) return write({ ...patch, ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: rest, board: s.board + 1, until: now + REF.nextBoardMs }) });
+      if (rest.length > 1) return write({ ...patch, ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: rest, board: s.board + 1, until: now + T(REF.nextBoardMs) }) });
       return write({ ...patch, ...outPatch(rest[0]) });
     }
 
     function outPatch(id) {
       return {
-        ...next({ kind: 'out', who: id, until: now + REF.outMs }),
+        ...next({ kind: 'out', who: id, until: now + T(REF.outMs) }),
         [`run/players/${id}/alive`]: false,
         [`run/players/${id}/place`]: alive().length,
         [`run/statusText/${id}`]: 'OUT',
         'run/current': null,
         'run/msg': `${name(id)} has to leave the table.`,
       };
+    }
+
+    /** Play out the rest instantly (computers only), then show results. */
+    function skipToEnd() {
+      const rng = createRng(newSeed());
+      let ids = alive();
+      let round = run.round || 0;
+      const history = (run.history || []).slice();
+      const patch = {};
+      while (ids.length > 1) {
+        const game = chooseGame(round, ids.length, history, rng);
+        history.push(game.id);
+        const variant = chooseVariant(game, room.meta?.versions || {}, rng);
+        let loser;
+        if (isRaceGame(game.id)) {
+          loser = ids.map((id) => [id, simulateSolveTime(game.id, P[id].skill || 1, rng)]).sort((a, b) => b[1] - a[1])[0][0];
+        } else {
+          let pool = ids;
+          for (;;) {
+            const sc = Object.fromEntries(pool.map((id) => [id, simulateScore(game.id, variant, P[id].skill || 1, rng)]));
+            const low = lowestScorers(sc);
+            if (low.length === 1) { loser = low[0]; break; }
+            pool = low;
+          }
+        }
+        patch[`run/players/${loser}/alive`] = false;
+        patch[`run/players/${loser}/place`] = ids.length;
+        ids = ids.filter((x) => x !== loser);
+        round++;
+      }
+      const w = ids[0];
+      return write({
+        ...patch,
+        ...next({ kind: 'done', winner: w }),
+        [`run/players/${w}/place`]: 1,
+        'run/round': round,
+        'run/history': history,
+        'run/statusText': { [w]: 'WINNER' },
+        'run/current': null,
+        'run/label': { round: 'Last to Leave', game: name(w), variant: 'is the last one at the table' },
+        'run/msg': `Skipped to the end. ${name(w)} is the LAST TO LEAVE!`,
+        'meta/status': 'done',
+      });
     }
 
     function finish() {

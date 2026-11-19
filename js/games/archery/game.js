@@ -9,7 +9,7 @@ import { createCanvas } from '../../core/canvas.js';
 import { attachPointer } from '../../core/input.js';
 import { shade } from '../../shared/colors.js';
 import { createCamera, renderRoom, fillPoly, line3 } from '../../shared/scene3d.js';
-import { createFlickTracker, flickToVelocity, stepBody, spinBasis } from '../../shared/throwing.js';
+import { createFlickTracker, flickToVelocity, stepBody, spinBasis, heldFollow, withReleasePoint, bounceOffPaul, SAFE_HALF_WIDTH } from '../../shared/throwing.js';
 import { createWind } from '../../shared/wind.js';
 import { createPopups, drawLabel } from '../../shared/hud.js';
 import { STATE_SHAPES, drawShape2D } from '../../shared/states.js';
@@ -36,7 +36,9 @@ export function createArchery(container, host) {
   const W = C.world;
   const FLOOR = -W.eyeHeight;
   const windOn = !!options.wind;
-  const variant = windOn ? 'wind' : 'regular';
+  const zonesOn = !!options.zones; // Hotspots mode
+  const HS = C.hotspots;
+  const variant = ['zones', 'wind'].filter((k) => options[k]).join('-') || 'regular';
   const rng = createRng(seed);
   const wind = createWind(rng, C.wind, windOn);
   const flick = createFlickTracker(C.throw.sampleMs);
@@ -60,6 +62,10 @@ export function createArchery(container, host) {
     wobble: 0,
     paulWalk: 0,
     paulMoving: 0,
+    paulFlinch: 0,
+    points: 0,
+    bonusHits: 0,
+    zone: null,
     bodies: [],
     active: null,
     held: { pos: [0, C.hold.y, C.hold.z], dragging: false, start: null, cur: null },
@@ -154,7 +160,7 @@ export function createArchery(container, host) {
   function randomBoard() {
     const B = C.board;
     const z = rng.range(B.distance);
-    const x = rng.range(-1, 1) * Math.min(B.maxOffsetX, cam.halfWidthAt(z) * 0.55);
+    const x = rng.range(-1, 1) * Math.min(B.maxOffsetX, z * SAFE_HALF_WIDTH * 0.9); // same spot on every screen
     const y = rng.range(B.centerY);
     let yaw = rng.chance(B.angleChance) ? rng.sign() * rng.range(B.yawDeg) : rng.range(-6, 6);
     const pitch = rng.chance(B.tiltChance) ? rng.range(B.tiltDeg) : 0;
@@ -165,6 +171,82 @@ export function createArchery(container, host) {
     const toCam = norm(mul(b.c, -1));
     if (dot(b.n, toCam) < 0.4) params.yaw = -yaw;
     return params;
+  }
+
+  // ---------- Hotspots ----------
+  // A zone in board coordinates: u (right) and v (up) in meters from the board's center.
+  function randomZone(bp) {
+    const w = bp.w, h = bp.h;
+    const kind = rng.weighted(HS.patterns);
+    if (kind === 'bull') return { kind, circles: [[0, 0, HS.bullRadius * h]] };
+    if (kind === 'corner') {
+      const r = HS.cornerRadius * h;
+      return { kind, circles: [[rng.sign() * (w / 2 - r * 1.15), rng.sign() * (h / 2 - r * 1.15), r]] };
+    }
+    if (kind === 'pair') {
+      const r = HS.pairRadius * h;
+      const a = [rng.range(-1, 1) * (w / 2 - r * 1.3), rng.range(-1, 1) * (h / 2 - r * 1.3)];
+      let b;
+      for (let i = 0; i < 20; i++) {
+        b = [rng.range(-1, 1) * (w / 2 - r * 1.3), rng.range(-1, 1) * (h / 2 - r * 1.3)];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) > r * 3) break;
+      }
+      return { kind, circles: [[a[0], a[1], r], [b[0], b[1], r]] };
+    }
+    if (kind === 'stripe') {
+      const sw = HS.stripeWidth * w;
+      return { kind, rect: [rng.range(-0.3, 0.3) * w - sw / 2, -h / 2, sw, h] };
+    }
+    const side = rng.int(0, 3); // half: left, right, top, bottom
+    const rect = [[-w / 2, -h / 2, w / 2, h], [0, -h / 2, w / 2, h], [-w / 2, 0, w, h / 2], [-w / 2, -h / 2, w, h / 2]][side];
+    return { kind, rect };
+  }
+
+  function inZone(z, u, v) {
+    if (!z) return false;
+    if (z.circles) return z.circles.some(([cu, cv, r]) => Math.hypot(u - cu, v - cv) <= r);
+    const [x, y, rw, rh] = z.rect;
+    return u >= x && u <= x + rw && v >= y && v <= y + rh;
+  }
+
+  // Draw the zone on the board's front in orange marker.
+  const frontCanvas = board3dFront();
+  const frontBase = frontCanvas && (() => { const c = document.createElement('canvas'); c.width = frontCanvas.width; c.height = frontCanvas.height; c.getContext('2d').drawImage(frontCanvas, 0, 0); return c; })();
+  function board3dFront() { return board3d.userData.front?.image || null; }
+  function paintZone() {
+    if (!frontCanvas) return;
+    const g = frontCanvas.getContext('2d');
+    const W2 = frontCanvas.width, H2 = frontCanvas.height;
+    g.drawImage(frontBase, 0, 0);
+    const z = st.zone, bp = st.boardTo;
+    if (z) {
+      const sx = (u) => (u / bp.w + 0.5) * W2, sy = (v) => (0.5 - v / bp.h) * H2;
+      g.save();
+      g.fillStyle = 'rgba(242,133,29,0.28)';
+      g.strokeStyle = '#e0700f';
+      g.lineWidth = 9;
+      g.lineJoin = 'round';
+      if (z.circles) {
+        for (const [cu, cv, r] of z.circles) {
+          g.beginPath();
+          g.ellipse(sx(cu), sy(cv), (r / bp.w) * W2, (r / bp.h) * H2, 0, 0, Math.PI * 2);
+          g.fill(); g.stroke();
+        }
+      } else {
+        const [x, y, rw, rh] = z.rect;
+        const x0 = sx(x), y0 = sy(y + rh), ww = (rw / bp.w) * W2, hh = (rh / bp.h) * H2;
+        g.fillRect(x0, y0, ww, hh);
+        g.strokeRect(x0 + 4, y0 + 4, ww - 8, hh - 8);
+      }
+      const [lu, lv] = z.circles ? z.circles[0] : [z.rect[0] + z.rect[2] / 2, z.rect[1] + z.rect[3] / 2];
+      g.fillStyle = '#c45a00';
+      g.font = `bold ${Math.round(H2 * 0.13)}px "Permanent Marker", sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('×2', sx(lu), sy(lv));
+      g.restore();
+    }
+    board3d.userData.front.needsUpdate = true;
   }
 
   function boardBasis(bp, wobble = 0) {
@@ -220,7 +302,7 @@ export function createArchery(container, host) {
     setPhase('flight');
   }
 
-  function decide(body, hit, reason, at) {
+  function decide(body, hit, reason, at, bonus = false) {
     body.decided = true;
     body.decidedAt = st.time;
     const sp = cam.project(at);
@@ -228,9 +310,11 @@ export function createArchery(container, host) {
     const y = clamp(sp.y - 20, 80, cam.H - 60);
     if (hit) {
       st.hits++;
-      st.results[st.throwIndex] = 'hit';
+      st.points += bonus ? HS.zonePoints : 1;
+      if (bonus) st.bonusHits++;
+      st.results[st.throwIndex] = bonus ? 'bonus' : 'hit';
       st.wobble = 1;
-      popups.add('HIT!', x, y, HIT_GREEN, 40);
+      popups.add(bonus ? `HOTSPOT! +${HS.zonePoints}` : 'HIT!', x, y, bonus ? '#e0700f' : HIT_GREEN, bonus ? 44 : 40);
     } else {
       st.results[st.throwIndex] = 'miss';
       if (reason) st.stats[reason]++;
@@ -249,6 +333,7 @@ export function createArchery(container, host) {
     const steps = Math.max(1, Math.ceil(dt / (1 / 240)));
     const h = dt / steps;
     const B = boardBasis(st.boardParams);
+    const paulSpot = paulPose(B);
     const rest = FLOOR + piece.thickness / 2;
     for (let i = 0; i < steps; i++) {
       if (b.settling) break;
@@ -256,6 +341,7 @@ export function createArchery(container, host) {
       stepBody(b, h, { gravity: W.gravity, drag: piece.drag, wind: wind.vec });
       spinBasis(b, b.w, h);
       b.t += h;
+      if (bounceOffPaul(b, paulSpot)) { if (!b.hitPaul) { b.hitPaul = true; st.paulFlinch = 1; } }
 
       // through the board's plane?
       if (!b.decided && b === st.active) {
@@ -268,7 +354,7 @@ export function createArchery(container, host) {
           const hw = B.w / 2 + piece.hitRadius;
           const hh = B.h / 2 + piece.hitRadius;
           if (Math.abs(u) <= hw && Math.abs(v) <= hh) {
-            decide(b, true, null, I);
+            decide(b, true, null, I, zonesOn && inZone(st.zone, u, v));
             // bounce off the board
             const vn = dot(b.v, B.n);
             b.v = mul(sub(b.v, mul(B.n, (1 + C.bounce.board) * vn)), 0.55);
@@ -336,7 +422,7 @@ export function createArchery(container, host) {
     st.held.dragging = false;
     const f = flick.end(p);
     if (st.paused || st.phase !== 'aim') return;
-    const fl = flickToVelocity(f, cam.H, C.throw);
+    const fl = flickToVelocity(withReleasePoint(f, p), cam.H, C.throw, cam);
     if (!fl) {
       const hp = cam.project(st.held.pos);
       popups.add('Flick it faster!', hp.x, hp.y - 90, SOFT, 22);
@@ -350,6 +436,7 @@ export function createArchery(container, host) {
     st.time += dt;
     wind.update(dt);
     st.wobble = Math.max(0, st.wobble - dt * 2.2);
+    st.paulFlinch = Math.max(0, st.paulFlinch - dt * 3);
     for (const b of st.bodies) if (!b.settled) stepPiece(b, dt);
 
     if (st.phase === 'ready') return;
@@ -370,18 +457,7 @@ export function createArchery(container, host) {
       }
       case 'aim': {
         const base = heldBase();
-        if (st.held.dragging && st.held.cur) {
-          const z = base[2];
-          const dx = st.held.cur.x - st.held.start.x;
-          const dy = st.held.cur.y - st.held.start.y;
-          st.held.pos = [
-            clamp(base[0] + (dx * z) / cam.f, -0.35, 0.35),
-            clamp(base[1] - (dy * z) / cam.f, base[1] - 0.12, base[1] + C.hold.maxLiftM),
-            z,
-          ];
-        } else {
-          st.held.pos = lerp3(st.held.pos, base, Math.min(1, dt * 12));
-        }
+        st.held.pos = heldFollow(cam, base, st.held.pos, st.held, dt, C.hold.maxLiftM);
         break;
       }
       case 'flight': {
@@ -408,6 +484,7 @@ export function createArchery(container, host) {
   function beginSetup(first) {
     st.boardFrom = { ...st.boardParams };
     st.boardTo = first ? { ...st.boardParams } : randomBoard();
+    if (zonesOn) { st.zone = randomZone(st.boardTo); paintZone(); }
     wind.reroll();
     st.held.pos = [0, C.hold.y - 0.45, C.hold.z];
     setPhase('setup', first ? 0.35 : C.boardMoveMs / 1000);
@@ -427,11 +504,11 @@ export function createArchery(container, host) {
     return {
       gameId: 'archery',
       variant,
-      score: st.hits,
-      maxScore: TOTAL,
-      passed: st.hits >= C.passScore,
+      score: zonesOn ? st.points : st.hits,
+      maxScore: zonesOn ? TOTAL * HS.zonePoints : TOTAL,
+      passed: zonesOn ? st.points >= HS.passScore : st.hits >= C.passScore,
       durationMs: Math.round(st.activeSec * 1000),
-      stats: { hits: st.hits, misses: TOTAL - st.hits, ...st.stats },
+      stats: { hits: st.hits, misses: TOTAL - st.hits, ...(zonesOn ? { hotspots: st.bonusHits } : {}), ...st.stats },
       seed: rng.seed,
     };
   }
@@ -470,7 +547,7 @@ export function createArchery(container, host) {
     const nh = norm([B.n[0], 0, B.n[2]]);
     const at = sub(B.c, mul(nh, C.paul.behindBoard));
     return {
-      x: at[0], z: at[2], floorY: FLOOR, yaw: deg(st.boardParams.yaw), walk: st.paulWalk, moving: st.paulMoving,
+      x: at[0], z: at[2], floorY: FLOOR, yaw: deg(st.boardParams.yaw), walk: st.paulWalk, moving: st.paulMoving, flinch: st.paulFlinch,
       leftHand: boardPoint(B, -(B.w / 2 - 0.02), -B.h * 0.12, -0.03),
       rightHand: boardPoint(B, B.w / 2 - 0.02, -B.h * 0.12, -0.03),
     };
@@ -582,8 +659,8 @@ export function createArchery(container, host) {
     const pad = Math.max(14, Math.min(cam.W, cam.H) * 0.025);
     const big = Math.round(clamp(cam.H * 0.065, 30, 56));
     const small = Math.round(big * 0.42);
-    drawLabel(ctx, 'HITS', pad, pad + small, small, SOFT);
-    drawLabel(ctx, `${st.hits} / ${TOTAL}`, pad, pad + small + big * 0.95, big, INK);
+    drawLabel(ctx, zonesOn ? 'POINTS' : 'HITS', pad, pad + small, small, SOFT);
+    drawLabel(ctx, zonesOn ? `${st.points} / ${TOTAL * HS.zonePoints}` : `${st.hits} / ${TOTAL}`, pad, pad + small + big * 0.95, big, INK);
     const piece = C.pieces[Math.min(st.throwIndex, TOTAL - 1)];
     let line = `Throw ${Math.min(st.throwIndex + 1, TOTAL)} of ${TOTAL} · ${piece.name}`;
     drawLabel(ctx, line, pad, pad + small + big * 0.95 + small * 1.5, small, SOFT);
@@ -613,10 +690,10 @@ export function createArchery(container, host) {
         ctx.lineWidth = Math.max(2.5, br * 0.32);
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        ctx.strokeStyle = res === 'hit' ? HIT_GREEN : MISS_RED;
+        ctx.strokeStyle = res === 'bonus' ? '#e0700f' : res === 'hit' ? HIT_GREEN : MISS_RED;
         const m = br * 0.5;
         ctx.beginPath();
-        if (res === 'hit') {
+        if (res === 'hit' || res === 'bonus') {
           ctx.moveTo(bx - m, by); ctx.lineTo(bx - m * 0.2, by + m * 0.75); ctx.lineTo(bx + m, by - m * 0.7);
         } else {
           ctx.moveTo(bx - m, by - m); ctx.lineTo(bx + m, by + m);

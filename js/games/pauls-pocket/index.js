@@ -9,7 +9,7 @@ export default {
   passText: 'Paul pulled your marker!',
   failText: 'Wrong marker. Unlucky.',
   howTo: [
-    'Paul holds out all 8 markers. <strong>Click or tap the one you want.</strong>',
+    'Paul holds out all 8 markers. <strong>Click or tap the one you want</strong> (on phones, use the color buttons).',
     'He stuffs them all in his khaki pocket and scrambles them around.',
     'He pulls one out. If it\'s yours, you survive.',
     'Pure luck: a 1 in 8 chance.',

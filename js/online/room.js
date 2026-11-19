@@ -2,7 +2,8 @@
 //
 // rooms/{CODE}/
 //   meta      { host uid, status 'lobby'|'playing'|'done', createdAt, cpus, versions }
-//   members   {uid}: { username, char, joinedAt }      everyone in the room (players + watchers)
+//   members   {uid}: { username, char, ready, joinedAt } everyone in the room
+//   requests  {uid}: 'fast' | 'skip'                    when only computers are left
 //   presence  {uid}: true while connected (removed automatically on disconnect)
 //   chars     {charId}: uid                            each character taken by one player
 //   run       the game itself, written only by the host (see referee.js)
@@ -90,8 +91,19 @@ export async function claimChar(code, uid, charId, prev) {
     await D.remove(ref(`rooms/${code}/chars/${prev}`));
   }
   await D.onDisconnect(ref(`rooms/${code}/chars/${charId}`)).remove();
-  await D.update(ref(`rooms/${code}/members/${uid}`), { char: charId });
+  await D.update(ref(`rooms/${code}/members/${uid}`), { char: charId, ready: false }); // new seat: ready again
   return true;
+}
+
+export async function setReady(code, uid, ready) {
+  const { D, ref } = await rtdb();
+  await D.update(ref(`rooms/${code}/members/${uid}`), { ready: !!ready });
+}
+
+/** 'fast' or 'skip' once only computers are left at the table. */
+export async function sendRequest(code, uid, what) {
+  const { D, ref } = await rtdb();
+  await D.set(ref(`rooms/${code}/requests/${uid}`), what);
 }
 
 export async function setMeta(code, patch) {
@@ -105,7 +117,7 @@ export async function subscribeRoom(code, cb) {
   const room = {};
   let queued = false;
   const emit = () => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; cb(room); }); };
-  const offs = ['meta', 'members', 'presence', 'chars', 'run', 'results', 'race'].map((k) =>
+  const offs = ['meta', 'members', 'presence', 'chars', 'run', 'results', 'race', 'requests'].map((k) =>
     D.onValue(ref(`rooms/${code}/${k}`), (s) => { room[k] = s.val(); emit(); }, (e) => { room.error = e; emit(); }));
   return () => offs.forEach((off) => off());
 }

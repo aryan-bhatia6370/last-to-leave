@@ -37,7 +37,9 @@ export function createEquations(container, host) {
     solved: 0,
     wrong: 0,
     solveTimes: [],
-    clock: createRoundClock(C.roundSeconds),
+    // offline: a 20 s clock. Competition/online: no clock (just a cap before a new problem)
+    clock: createRoundClock(compete ? C.raceNewBoardSec : C.roundSeconds),
+    lockUntil: 0, // Competition/online: after a wrong answer you wait a few seconds
     flash: 0,
     lastGuess: '',
     activeSec: 0,
@@ -73,21 +75,23 @@ export function createEquations(container, host) {
       endRound(true);
     } else {
       st.wrong++;
-      st.clock.penalize(C.wrongPenaltySec);
       st.flash = 1;
       bar.shake();
       bar.clear();
+      if (compete) {
+        st.lockUntil = st.raceT + C.raceLockoutSec;
+        bar.setEnabled(false);
+        popups.add(`Nope! Wait ${C.raceLockoutSec}s`, size.w / 2, size.h * 0.24, BAD, 30);
+        return;
+      }
+      st.clock.penalize(C.wrongPenaltySec);
       popups.add(`Nope! −${C.wrongPenaltySec}s`, size.w / 2, size.h * 0.24, BAD, 30);
       if (st.clock.expired) endRound(false, "Time's up!");
     }
   }
 
   function endRound(won, why) {
-    if (compete && !won && !st.raceWinner) {
-      const first = compete.racers.slice().sort((a, b) => a.at - b.at)[0];
-      st.raceWinner = first ? first.name : null;
-      if (first && why === "Time's up!") why = `${first.name} got it!`;
-    }
+    if (compete && !won && !st.raceWinner && why === "Time's up!") why = 'Nobody got it. New problem!';
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.solved++;
     bar.setEnabled(false);
@@ -119,8 +123,13 @@ export function createEquations(container, host) {
           if (next) {
             st.raceWinner = next.name;
             endRound(false, `${next.name} got it!`);
+          } else if (st.lockUntil && st.raceT >= st.lockUntil) {
+            st.lockUntil = 0;
+            bar.setEnabled(true);
+            bar.focus();
           }
         }
+        if (st.phase !== 'solve') break;
         if (st.clock.expired) endRound(false, "Time's up!");
         break;
       case 'reveal':
@@ -218,10 +227,13 @@ export function createEquations(container, host) {
     const p = problems[Math.min(st.round, problems.length - 1)];
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
     else drawRounds(ctx, size, 'SOLVED', st.solved, ROUNDS, st.results, st.round);
-    if (st.phase === 'solve' || st.phase === 'reveal') drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
-    if (p && (st.phase === 'solve' || st.phase === 'flipIn') && p.tier !== 'common') {
-      const label = p.tier === 'veryRare' ? 'CALCULUS?!' : 'Bonus: algebra / geometry';
-      drawLabel(ctx, label, size.w / 2, 40, 22, p.tier === 'veryRare' ? BAD : '#1d5fd1', 'center');
+    if (!compete && (st.phase === 'solve' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
+    if (compete && st.phase === 'solve' && st.lockUntil) {
+      drawLabel(ctx, `Wait ${Math.ceil(st.lockUntil - st.raceT)}…`, size.w / 2, size.h * 0.16, 30, BAD, 'center');
+    }
+    const TAG = { easy: ['Quick one!', '#1f9d4c'], algebra: ['Algebra', '#1d5fd1'], geometry: ['Geometry', '#1d5fd1'], veryRare: ['CALCULUS?!', BAD] };
+    if (p && (st.phase === 'solve' || st.phase === 'flipIn') && TAG[p.tier]) {
+      drawLabel(ctx, TAG[p.tier][0], size.w / 2, 40, 22, TAG[p.tier][1], 'center');
     }
     popups.draw(ctx);
   }

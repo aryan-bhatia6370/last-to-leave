@@ -13,7 +13,7 @@
 //   users/{uid}/history/{auto}        same fields, one per game played
 
 import { FIREBASE_CONFIG } from './firebaseConfig.js';
-import { scores, onScoreSaved } from './scores.js';
+import { scores, onScoreSaved, isCurrent } from './scores.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.14.1';
 
@@ -147,13 +147,14 @@ const cloudFields = (r) => ({
   maxScore: r.maxScore ?? null,
   passed: !!r.passed,
   playedAt: r.playedAt,
+  rv: r.rv ?? 1,
 });
 
 async function pushBest(rec) {
   const { db, F } = fb;
   const ref = F.doc(db, 'users', state.user.uid, 'bests', `${rec.gameId}:${rec.variant}`);
   const cur = await F.getDoc(ref);
-  if (!cur.exists() || rec.score > cur.data().score) await F.setDoc(ref, cloudFields(rec));
+  if (!cur.exists() || !isCurrent(cur.data()) || rec.score > cur.data().score) await F.setDoc(ref, cloudFields(rec));
 }
 
 // every new score: save it to your account too
@@ -175,7 +176,7 @@ export async function syncScores() {
     // upload what this device has that's better
     const local = await scores.getBests();
     for (const [k, rec] of Object.entries(local)) {
-      if (!cloud[k] || rec.score > cloud[k].score) await F.setDoc(F.doc(db, 'users', state.user.uid, 'bests', k), cloudFields(rec));
+      if (!cloud[k] || !isCurrent(cloud[k]) || rec.score > cloud[k].score) await F.setDoc(F.doc(db, 'users', state.user.uid, 'bests', k), cloudFields(rec));
     }
     // download what the account has that's better
     const changed = await scores.mergeBests(cloud);

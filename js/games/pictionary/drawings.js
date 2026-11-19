@@ -6,12 +6,14 @@
 // `accept` lists other answers that count. Drawings made with the drawing
 // recorder (#/draw) can be pasted into this list.
 
+import { MORE_DRAWINGS } from './drawings2.js';
+
 const P = (...pts) => ({ t: 'p', pts });
 const S = (...pts) => ({ t: 's', pts });
 const C = (x, y, r) => ({ t: 'e', x, y, rx: r, ry: r });
 const E = (x, y, rx, ry) => ({ t: 'e', x, y, rx, ry });
 
-export const DRAWINGS = [
+const BASE_DRAWINGS = [
   { answer: 'house', accept: ['home', 'hut', 'cabin'], strokes: [
     P([20, 85], [20, 45], [80, 45], [80, 85], [20, 85]), P([14, 49], [50, 15], [86, 49]),
     P([42, 85], [42, 62], [58, 62], [58, 85]), P([28, 52], [36, 52], [36, 60], [28, 60], [28, 52])] },
@@ -122,6 +124,8 @@ export const DRAWINGS = [
     E(50, 24, 22, 6), P([28, 24], [36, 88]), P([72, 24], [64, 88]), S([36, 88], [50, 91], [64, 88]),
     S([31, 46], [50, 50], [69, 46]), S([33, 62], [50, 66], [67, 62])] },
 ];
+
+export const DRAWINGS = [...BASE_DRAWINGS, ...MORE_DRAWINGS];
 
 // ---------- turning strokes into points ----------
 function catmull(pts, perSeg = 8) {
