@@ -2,8 +2,8 @@
 // Setup screen -> the run (rounds, turns, ties, races, eliminations, final).
 
 import {
-  CHARACTERS, competitionGames, chooseGame, chooseVariant, isRaceGame,
-  simulateScore, simulateSolveTime, randomSkill, lowestScorers, maxScoreFor,
+  CHARACTERS, YANK_CHANCE, competitionGames, chooseRound, poolFrom, isRaceGame,
+  simulateScore, simulateSolveTime, simulateWrongTimes, randomSkill, lowestScorers, maxScoreFor,
 } from './engine.js';
 import { playTurn } from './playTurn.js';
 import { createRng, newSeed } from '../core/rng.js';
@@ -12,13 +12,17 @@ import { scores } from '../core/scores.js';
 import { recordCompetitionRoundWin } from '../core/leaderboard.js';
 
 const SETTINGS_KEY = 'ltl.compete.v1';
+export const MODE_INFO = {
+  elimination: 'Lowest score each round leaves the table. Last one sitting wins.',
+  points: 'Nobody leaves. Each round: 1st = 3 points, 2nd = 2, 3rd = 1. Most points after 5 rounds wins.',
+};
 const ABORT = Symbol('abort');
 // spread players around the table: one per bench first, then fill in
 const SEAT_ORDER = [0, 2, 4, 6, 1, 3, 5, 7];
 
 function loadSettings() {
-  try { return { character: 'aryan', cpus: 3, versions: {}, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}) }; }
-  catch { return { character: 'aryan', cpus: 3, versions: {} }; }
+  try { return { character: 'aryan', cpus: 3, versions: {}, off: {}, mode: 'elimination', ...(JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}) }; }
+  catch { return { character: 'aryan', cpus: 3, versions: {}, off: {}, mode: 'elimination' }; }
 }
 function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
@@ -63,18 +67,25 @@ export async function renderCompete(outlet) {
               </ul>
             </div>
             <div>
-              <h2>Game versions</h2>
+              <h2>How to win</h2>
+              <div class="seg mode-seg" data-modes>
+                <button type="button" data-mode="elimination">Elimination</button>
+                <button type="button" data-mode="points">Points (5 rounds)</button>
+              </div>
+              <p class="muted small" data-modeinfo></p>
+              <h2>Games &amp; versions</h2>
+              <p class="muted small">Untick a game to leave it out of the pool.</p>
               <div class="versions">
                 ${games.map((g) => {
                   const alts = g.variants.filter((v) => v.id !== 'regular');
                   const cur = settings.versions[g.id] || 'random';
-                  return `<label class="version-row"><span>${escapeHtml(g.name)}</span>
+                  return `<div class="version-row"><label class="pool-pick"><input type="checkbox" data-pool="${g.id}" ${settings.off?.[g.id] ? '' : 'checked'}><span>${escapeHtml(g.name)}</span></label>
                     ${alts.length ? `<select data-ver="${g.id}">
                       <option value="random" ${cur === 'random' ? 'selected' : ''}>Random (mostly normal)</option>
                       <option value="normal" ${cur === 'normal' ? 'selected' : ''}>Normal only</option>
                       ${alts.map((v) => `<option value="${v.id}" ${cur === v.id ? 'selected' : ''}>Only ${escapeHtml(v.label)}</option>`).join('')}
                     </select>` : '<span class="muted">One version</span>'}
-                  </label>`;
+                  </div>`;
                 }).join('')}
               </div>
               <button class="btn btn-primary btn-big" data-start>Take your seat</button>
@@ -98,6 +109,16 @@ export async function renderCompete(outlet) {
       sizeLine();
       saveSettings(settings);
     }));
+    outlet.querySelectorAll('[data-pool]').forEach((cb) => cb.addEventListener('change', () => {
+      settings.off = { ...(settings.off || {}), [cb.dataset.pool]: !cb.checked };
+      saveSettings(settings);
+    }));
+    const modeLine = () => {
+      outlet.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === settings.mode));
+      outlet.querySelector('[data-modeinfo]').textContent = MODE_INFO[settings.mode] || '';
+    };
+    outlet.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { settings.mode = b.dataset.mode; saveSettings(settings); modeLine(); }));
+    modeLine();
     outlet.querySelectorAll('[data-ver]').forEach((sel) => sel.addEventListener('change', () => {
       settings.versions[sel.dataset.ver] = sel.value;
       saveSettings(settings);
@@ -221,6 +242,7 @@ class Run {
 
   // ---------- the run ----------
   async main() {
+    if (this.settings.mode === 'points') return this.mainPoints();
     this.setRound('Welcome to the table', 'Last to Leave', `${this.total} players`);
     this.renderPanel();
     this.say('Paul is getting the first game ready…');
@@ -230,9 +252,8 @@ class Run {
     while (this.alive().length > 1) {
       const alive = this.alive();
       const isFinal = alive.length === 2;
-      const game = chooseGame(round, alive.length, history, this.rng);
-      history.push(game.id);
-      const variant = chooseVariant(game, this.settings.versions, this.rng);
+      const { game, variant } = chooseRound(round, alive.length, history, this.settings.versions, this.rng, { allowed: poolFrom(this.settings.off) });
+      history.push(`${game.id}:${variant}`);
       const vLabel = game.variants.find((v) => v.id === variant)?.label ?? 'Regular';
       this.statusText = {};
       this.setRound(isFinal ? 'FINAL' : `Round ${round + 1}`, game.name, vLabel === 'Regular' ? 'Normal' : vLabel);
@@ -246,7 +267,7 @@ class Run {
     await this.finish(this.alive()[0]);
   }
 
-  async scored(game, variant, contenders, round, replay = false) {
+  async scored(game, variant, contenders, round, replay = false, once = false) {
     const max = maxScoreFor(game.id, variant);
     const fmt = (s) => (max != null ? `${s}/${max}` : `${s}`);
     const sorted = contenders.slice().sort((a, b) => a.seat - b.seat);
@@ -276,6 +297,7 @@ class Run {
     // leaderboard: top score in a round (ties for top count; tie-break replays don't)
     const me = contenders.find((p) => p.human);
     if (me && !replay && results[me.id] >= Math.max(...Object.values(results))) recordCompetitionRoundWin(this.total);
+    if (once) return results; // Points mode: everyone plays once, no eliminations
     const low = lowestScorers(results);
     if (low.length === 1) return low[0];
     const list = low.map((id) => this.name(id));
@@ -292,19 +314,22 @@ class Run {
     return loser;
   }
 
-  async race(game, variant, contenders) {
+  /** stopAfter: Points mode stops once that many are safe (only the top 3 score). */
+  async race(game, variant, contenders, stopAfter = Infinity) {
     let pool = contenders.slice();
     let board = 1;
-    while (pool.length > 1) {
+    this.raceOrder = [];
+    this.raceLeft = [];
+    while (pool.length > 1 && this.raceOrder.length < stopAfter) {
       const human = pool.find((p) => p.human);
-      const racers = pool.filter((p) => !p.human).map((p) => ({ id: p.id, name: p.name, at: simulateSolveTime(game.id, p.skill, this.rng) }));
+      const racers = pool.filter((p) => !p.human).map((p) => { const at = simulateSolveTime(game.id, p.skill, this.rng); return { id: p.id, name: p.name, at, wrongs: simulateWrongTimes(at, this.rng) }; });
       for (const p of pool) this.statusText[p.id] = 'RACING';
       this.renderPanel();
       let winner;
       if (human) {
         this.say(`Board ${board}: first to get it is safe. ${pool.length} still racing.`);
         await this.action(board === 1 ? 'Start the race' : 'Next board');
-        const r = await this.playHuman(game, variant, { compete: { racers: racers.map(({ name, at }) => ({ name, at })) } }, `Race · board ${board}`);
+        const r = await this.playHuman(game, variant, { compete: { racers: racers.map(({ name, at, wrongs }) => ({ name, at, wrongs })) } }, `Race · board ${board}`);
         const w = r.stats?.winner;
         winner = w === 'you' ? human.id : racers.find((x) => x.name === w)?.id;
         if (w === 'you' && board === 1) recordCompetitionRoundWin(this.total); // first to solve = top score
@@ -315,13 +340,70 @@ class Run {
         winner = racers.slice().sort((a, b) => a.at - b.at)[0].id;
       }
       this.statusText[winner] = 'SAFE';
+      this.raceOrder.push(winner);
       pool = pool.filter((p) => p.id !== winner);
       this.renderPanel();
       this.say(`${this.name(winner)} got it. Safe!`);
       await this.wait(1300);
       board++;
     }
+    if (pool.length === 1) this.raceOrder.push(pool[0].id);
+    else this.raceLeft = pool.map((p) => p.id); // Points mode: still racing when it stopped
     return pool[0].id;
+  }
+
+  // ---------- Points mode: 5 rounds, nobody leaves; 1st = 3, 2nd = 2, 3rd = 1 ----------
+  async mainPoints() {
+    const ROUNDS = 5, AWARD = [3, 2, 1];
+    this.points = Object.fromEntries(this.players.map((p) => [p.id, 0]));
+    this.firsts = Object.fromEntries(this.players.map((p) => [p.id, 0]));
+    this.setRound('Welcome to the table', 'Points game', `${ROUNDS} rounds`);
+    this.renderPanel();
+    this.say('Nobody leaves this time. Most points after 5 rounds wins.');
+    await this.wait(2200);
+    const history = [];
+    for (let round = 0; round < ROUNDS; round++) {
+      const everyone = this.players;
+      // the Sausage Game can only come up in the last two rounds
+      const { game, variant } = chooseRound(round, 99, history, this.settings.versions, this.rng, {
+        allowed: poolFrom(this.settings.off),
+        canUse: (id) => id !== 'sausage' || round >= ROUNDS - 2,
+        pointsMode: true,
+      });
+      history.push(`${game.id}:${variant}`);
+      const vLabel = game.variants.find((v) => v.id === variant)?.label ?? 'Regular';
+      this.statusText = {};
+      this.setRound(`Round ${round + 1} of ${ROUNDS}`, game.name, vLabel === 'Regular' ? 'Normal' : vLabel);
+      this.renderPanel();
+      this.say(`Paul picks… ${game.name}${vLabel !== 'Regular' ? ` (${vLabel})` : ''}!`);
+      await this.wait(2200);
+      // rank everyone this round
+      let ranking; // [[id, rank]] with ties sharing a rank
+      if (isRaceGame(game.id)) {
+        await this.race(game, variant, everyone, AWARD.length);
+        ranking = this.raceOrder.map((id, i) => [id, i + 1]);
+        for (const id of this.raceLeft) ranking.push([id, this.raceOrder.length + 1]); // share the next place
+      } else {
+        const res = await this.scored(game, variant, everyone, round, false, true);
+        const sorted = Object.entries(res).sort((a, b) => b[1] - a[1]);
+        ranking = sorted.map(([id, sc]) => [id, 1 + sorted.filter(([, o]) => o > sc).length]);
+      }
+      for (const [id, rank] of ranking) {
+        const pts = AWARD[rank - 1] || 0;
+        this.points[id] += pts;
+        if (rank === 1) this.firsts[id]++;
+        this.statusText[id] = pts ? `+${pts} · ${this.points[id]} pts` : `${this.points[id]} pts`;
+      }
+      this.renderPanel();
+      const leader = this.players.slice().sort((a, b) => this.points[b.id] - this.points[a.id])[0];
+      this.say(`After round ${round + 1}: ${this.name(leader.id)} leads with ${this.points[leader.id]}.`);
+      await this.wait(2600);
+    }
+    // final standings: points, then most 1st places, then a coin flip
+    const order = this.players.slice().sort((a, b) => (this.points[b.id] - this.points[a.id]) || (this.firsts[b.id] - this.firsts[a.id]) || (this.rng.next() - 0.5));
+    order.forEach((p, i) => { p.place = i + 1; p.alive = i === 0; });
+    for (const p of order.slice(1)) this.table.eliminate(p.id);
+    await this.finish(order[0], { points: true });
   }
 
   async knockOut(id) {
@@ -331,8 +413,10 @@ class Run {
     this.statusText[id] = 'OUT';
     this.renderPanel();
     this.say(`${this.name(id)} has to leave the table.`);
-    if (this.skipToEnd) this.table.eliminate(id); // don't wait for the walk-away
-    else await this.table.eliminate(id);
+    // Paul leads them out; now and then a computer refuses and gets yanked off the bench
+    const yank = !p.human && this.rng.next() < YANK_CHANCE;
+    if (this.skipToEnd) this.table.eliminate(id, { yank }); // don't wait for the walk-away
+    else await this.table.eliminate(id, { yank });
     this.check();
     if (p.human && this.alive().length > 1) {
       this.say(`You're out, ${this.ordinal(p.place)} of ${this.total}.`);
@@ -354,7 +438,7 @@ class Run {
 
   ordinal(n) { return `${n}${['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th'}`; }
 
-  async finish(winner) {
+  async finish(winner, { points = false } = {}) {
     winner.place = 1;
     this.statusText[winner.id] = 'WINNER';
     this.renderPanel(winner.id);
@@ -365,12 +449,12 @@ class Run {
     const rounds = this.total - me.place; // rounds survived
     await scores.submit({
       gameId: 'competition',
-      variant: `${this.total}p`,
-      score: rounds,
-      maxScore: this.total - 1,
+      variant: points ? `${this.total}p-points` : `${this.total}p`,
+      score: points ? this.points[me.id] : rounds,
+      maxScore: points ? 15 : this.total - 1,
       passed: won,
       durationMs: Math.round(performance.now() - this.startedAt),
-      stats: { place: me.place, players: this.total },
+      stats: { place: me.place, players: this.total, ...(points ? { mode: 'points' } : {}) },
       seed: this.rng.seed,
     });
     await this.wait(this.fast ? 400 : 1600);
@@ -381,8 +465,8 @@ class Run {
         <p class="kicker">Competition Mode · ${this.total} players</p>
         <h2 class="verdict ${won ? 'pass' : 'fail'}">${won ? 'You are the Last to Leave!' : `${escapeHtml(this.name(winner.id))} won it.`}</h2>
         <div class="big-score">${this.ordinal(me.place)}<small> / ${this.total}</small></div>
-        <p class="muted">You survived ${rounds} round${rounds === 1 ? '' : 's'}.</p>
-        <ol class="final-order">${this.players.slice().sort((a, b) => a.place - b.place).map((p) => `<li${p.human ? ' class="you"' : ''}>${escapeHtml(this.name(p.id))}</li>`).join('')}</ol>
+        <p class="muted">${points ? `You scored ${this.points[me.id]} points.` : `You survived ${rounds} round${rounds === 1 ? '' : 's'}.`}</p>
+        <ol class="final-order">${this.players.slice().sort((a, b) => a.place - b.place).map((p) => `<li${p.human ? ' class="you"' : ''}>${escapeHtml(this.name(p.id))}${points ? `<span class="perf">${this.points[p.id]} pts</span>` : ''}</li>`).join('')}</ol>
         <div class="btn-row">
           <button class="btn btn-primary" data-again>Play again</button>
           <button class="btn" data-setup>Change setup</button>

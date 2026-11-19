@@ -6,8 +6,8 @@
 export const GAMES = [
   {
     id: 'marker-catching',
-    rv: 2,
-    variants: [{ id: 'regular', label: 'Regular' }, { id: 'bullet', label: 'Bullet' }, { id: 'endless', label: 'Endless' }, { id: 'bullet-endless', label: 'Bullet + Endless' }],
+    rv: 3, // 3: grab spam nerf (2026-11-19)
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'bullet', label: 'Bullet' }, { id: 'endless', label: 'Endless' }, { id: 'bullet-endless', label: 'Bullet + Endless' }, { id: 'memory', label: 'Memory' }, { id: 'bullet-memory', label: 'Bullet + Memory' }],
     name: 'Marker Catching',
     color: 'red',
     blurb: 'Eight markers get thrown your way. Catch as many as you can.',
@@ -16,8 +16,8 @@ export const GAMES = [
   },
   {
     id: 'pictionary',
-    rv: 2,
-    variants: [{ id: 'regular', label: 'Regular' }, { id: 'mine', label: 'With my drawings' }, { id: 'streak', label: 'Streak (endless)', endless: true }],
+    rv: 3, // 3: Streak became Rush, one miss ends it (2026-11-19)
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'mine', label: 'With my drawings' }, { id: 'rush', label: 'Rush (endless)', endless: true }],
     name: 'Pictionary',
     color: 'black',
     blurb: 'Guess the bad whiteboard sketch before time runs out.',
@@ -33,6 +33,16 @@ export const GAMES = [
     blurb: 'The board flips. Solve the problem in your head, fast.',
     phase: 5,
     load: () => import('./equations/index.js'),
+  },
+  {
+    id: 'trivia',
+    rv: 1,
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'rush', label: 'Rush (endless)', endless: true }],
+    name: 'Trivia',
+    color: 'blue',
+    blurb: 'The board flips to a trivia question. Type the answer before time runs out.',
+    phase: 11,
+    load: () => import('./trivia/index.js'),
   },
   {
     id: 'archery',
@@ -65,8 +75,18 @@ export const GAMES = [
     load: () => import('./pauls-pocket/index.js'),
   },
   {
+    id: 'sausage',
+    rv: 1,
+    variants: [{ id: 'regular', label: 'Regular' }],
+    name: 'The Sausage Game',
+    color: 'purple',
+    blurb: 'Flick a marker\'s ink "sausage" up a whiteboard into the point bands.',
+    phase: 11,
+    load: () => import('./sausage/index.js'),
+  },
+  {
     id: 'cup-catching',
-    rv: 3, // 3: spilling removed (2026-11-19)
+    rv: 4, // 4: back to left/right + up/down with a landing ring (2026-11-19)
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'endless', label: 'Endless' }],
     name: 'Cup Catching',
     color: 'pink',
@@ -76,7 +96,7 @@ export const GAMES = [
   },
   {
     id: 'cup-throwing',
-    rv: 2,
+    rv: 3, // 3: last-throw path + cup shadow aids (2026-11-19)
     variants: [{ id: 'regular', label: 'Regular' }, { id: 'moving', label: 'Moving Cup' }],
     name: 'Cup Throwing',
     color: 'purple',

@@ -59,7 +59,7 @@ export async function renderRecords(outlet, _params, { isCurrent }) {
         <thead><tr><th>Game</th><th>Mode</th><th>Score</th><th></th><th>When</th></tr></thead>
         <tbody>${history.map((r) => `<tr>
           <td>${escapeHtml(gameName(r.gameId))}</td>
-          <td>${escapeHtml(r.gameId === 'competition' ? r.variant.replace('p', ' players') : variantLabel(r.gameId, r.variant))}</td>
+          <td>${escapeHtml(r.gameId === 'competition' ? r.variant.replace('p-points', ' players · points').replace(/p$/, ' players') : variantLabel(r.gameId, r.variant))}</td>
           <td class="num">${formatScore(r.score, r.maxScore)}</td>
           <td>${r.gameId === 'competition' ? (r.passed ? '<span class="pass-dot">won</span>' : `<span class="fail-dot">${r.stats?.place ?? '?'} of ${r.stats?.players ?? '?'}</span>`) : r.passed ? '<span class="pass-dot">survived</span>' : '<span class="fail-dot">out</span>'}</td>
           <td>${fmtDate(r.playedAt)}</td>

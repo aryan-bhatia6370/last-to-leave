@@ -518,8 +518,9 @@ export function createBowling(container, host) {
     paul3d.update({ ...PAUL_SPOT, yaw: 0.35, flinch: st.paulFlinch });
     for (const mesh of markerMeshes.values()) mesh.visible = false;
     for (const m of st.markers) {
-      let mesh = markerMeshes.get(m);
-      if (!mesh) { mesh = createMarker3D(m.color.hex); stage.scene.add(mesh); markerMeshes.set(m, mesh); }
+      const key = m.color.id; // by color (spectators get fresh state objects every update)
+      let mesh = markerMeshes.get(key);
+      if (!mesh) { mesh = createMarker3D(m.color.hex); stage.scene.add(mesh); markerMeshes.set(key, mesh); }
       const { bottom, top } = markerEnds(m);
       mesh.visible = true;
       setRodPose(mesh, bottom, top);

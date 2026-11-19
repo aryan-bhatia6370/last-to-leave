@@ -59,7 +59,8 @@ export function createMarkerCatching(container, host) {
   const WORLD = CONFIG.world;
   const FLOOR_Y = -WORLD.eyeHeight;
   const rng = createRng(seed);
-  const variant = ['bullet', 'endless'].filter((k) => options[k]).join('-') || 'regular';
+  const memory = !!options.memory && !endless; // Memory mode (never with Endless)
+  const variant = [bullet && 'bullet', endless && 'endless', memory && 'memory'].filter(Boolean).join('-') || 'regular';
 
   const st = {
     phase: 'ready', // ready | gap | windup | flight | resolve | done
@@ -87,6 +88,9 @@ export function createMarkerCatching(container, host) {
     pointer: null,
     press: 0,
     cooldownUntil: 0,
+    fumblesThisThrow: 0,
+    points: 0,   // Memory mode score
+    memo: null,  // Memory mode: { bonus: [colorIds], penalty: [colorIds] }
     finished: false,
     fps: 60,
   };
@@ -271,6 +275,7 @@ export function createMarkerCatching(container, host) {
 
     const axis = norm([rng.range(-1, 1), rng.range(-1, 1), rng.range(-1, 1)]);
     const kind = plan ? plan[st.throwIndex % 8] : rollKind(rng);
+    st.fumblesThisThrow = 0;
     const pace = kind.pace === 'normal' ? P : P.rare[kind.pace];
     st.shot = {
       color: nextColor(),
@@ -363,7 +368,13 @@ export function createMarkerCatching(container, host) {
     }
     st.flyers.push({ color: s.color, from: { x: geo.x, y: geo.y, len: geo.len, ang: geo.ang, w: geo.width }, slotIndex, t: 0, dur: 0.45 });
     st.effects.push({ type: 'ring', x: geo.x, y: geo.y, color: s.color.hex, life: 0, max: 0.45 });
-    const praise = st.streak >= 3 ? `${st.streak} in a row!` : 'Caught!';
+    let praise = st.streak >= 3 ? `${st.streak} in a row!` : 'Caught!';
+    if (memory) {
+      const M = CONFIG.memory;
+      const pts = st.memo.bonus.includes(s.color.id) ? M.bonusPoints : st.memo.penalty.includes(s.color.id) ? M.penaltyPoints : 1;
+      st.points += pts;
+      praise = pts > 1 ? `Bonus! +${pts}` : pts < 0 ? `Ouch! ${pts}` : '+1';
+    }
     popup(praise, geo.x, geo.y - geo.len * 0.4 - 10, s.color.hex, 30);
     setPhase('resolve', CONFIG.resolvePauseMs / 1000);
   }
@@ -401,9 +412,9 @@ export function createMarkerCatching(container, host) {
     return {
       gameId: 'marker-catching',
       variant,
-      score: st.caught,
+      score: memory ? Math.max(0, st.points) : st.caught,
       maxScore: endless ? null : CONFIG.throwsPerGame,
-      passed: st.caught >= passScore,
+      passed: memory ? st.points >= CONFIG.memory.passScore : st.caught >= passScore,
       durationMs: Math.round(st.activeSec * 1000),
       stats: {
         caught: st.caught,
@@ -450,7 +461,9 @@ export function createMarkerCatching(container, host) {
       popup('Whiff', p.x, p.y - 30, '#8a8f98', 18);
     }
     st.effects.push({ type: 'puff', x: p.x, y: p.y, life: 0, max: 0.3 });
-    st.cooldownUntil = now + CONFIG.catching.fumbleCooldownMs;
+    // grabbing again and again at the same throw gets slower each time (hidden: no visual)
+    st.cooldownUntil = now + CONFIG.catching.fumbleCooldownMs + CONFIG.catching.fumbleStackMs * st.fumblesThisThrow;
+    st.fumblesThisThrow++;
   }
 
   function popup(text, x, y, color, size) {
@@ -471,6 +484,9 @@ export function createMarkerCatching(container, host) {
     const k = st.phaseDur > 0 ? clamp(st.phaseT / st.phaseDur, 0, 1) : 1;
 
     switch (st.phase) {
+      case 'brief':
+        if (k >= 1) beginThrow();
+        break;
       case 'gap': {
         Thrower.walkThrower(t, k, dt, st.time);
         if (k >= 1) setPhase('windup', rng.range(P.windupMs) / 1000 / Math.sqrt(st.speed));
@@ -633,7 +649,27 @@ export function createMarkerCatching(container, host) {
   }
 
 
+  // Memory mode briefing: the four colors to remember
+  function drawMemoryBrief() {
+    if (!memory || st.phase !== 'brief' || !st.memo) return;
+    const w = Math.min(cam.W - 32, 460), h = 210;
+    const x = (cam.W - w) / 2, y = cam.playH * 0.22;
+    drawGlassBar(ctx, x, y, w, h);
+    const k = st.phaseDur > 0 ? Math.max(0, st.phaseDur - st.phaseT) : 0;
+    drawText(`Remember these! (${Math.ceil(k)})`, cam.W / 2, y + 30, 22, '#fff', 'center');
+    const rows = [['+2  catch these', st.memo.bonus, '#7ff0a8'], ['−1  dodge these', st.memo.penalty, '#ff8a98']];
+    rows.forEach(([label, ids, col], r) => {
+      const ry = y + 78 + r * 72;
+      drawText(label, x + 22, ry + 6, 20, col, 'left');
+      ids.forEach((id, i) => {
+        const c = MARKER_COLORS.find((m) => m.id === id);
+        drawMarker(ctx, x + w - 150 + i * 80, ry, 64, 0, c.hex, { width: 11, shadow: true });
+      });
+    });
+  }
+
   function drawHUD() {
+    drawMemoryBrief();
     // tray along the bottom
     drawGlassBar(ctx, 0, cam.H - trayH, cam.W, trayH);
     if (!endless) {
@@ -675,12 +711,13 @@ export function createMarkerCatching(container, host) {
     const pad = Math.max(14, Math.min(cam.W, cam.H) * 0.025);
     const big = Math.round(clamp(cam.H * 0.065, 30, 56));
     const small = Math.round(big * 0.42);
-    drawText('CAUGHT', pad, pad + small, small, '#565a62');
-    drawText(endless ? `${st.caught}` : `${st.caught} / ${CONFIG.throwsPerGame}`, pad, pad + small + big * 0.95, big, INK);
+    drawText(memory ? 'POINTS' : 'CAUGHT', pad, pad + small, small, '#565a62');
+    drawText(memory ? `${st.points} / ${CONFIG.throwsPerGame}` : endless ? `${st.caught}` : `${st.caught} / ${CONFIG.throwsPerGame}`, pad, pad + small + big * 0.95, big, INK);
     let line = endless
       ? `Speed ×${st.speed.toFixed(2)}`
       : `Throw ${Math.min(st.throwIndex + 1, CONFIG.throwsPerGame)} of ${CONFIG.throwsPerGame}`;
     if (bullet) line += ' · Bullet';
+    if (memory) line += ' · Memory';
     drawText(line, pad, pad + small + big * 0.95 + small * 1.5, small, '#565a62');
 
     // endless strikes (top center)
@@ -730,7 +767,7 @@ export function createMarkerCatching(container, host) {
     const p = st.pointer;
     if (!p || p.type !== 'mouse') return;
     const pad = CONFIG.catching.hitPadding * Math.min(cam.W, cam.playH);
-    const busy = st.time * 1000 < st.cooldownUntil;
+    const busy = false; // the grab cooldown is invisible on purpose
     const r = (pad + 4) * (1 - st.press * 0.35);
     ctx.save();
     ctx.strokeStyle = busy ? 'rgba(255,90,110,0.75)' : 'rgba(255,255,255,0.7)';
@@ -803,6 +840,14 @@ export function createMarkerCatching(container, host) {
     state: () => st, // for live spectating
     start() {
       if (st.phase !== 'ready') return;
+      if (memory) {
+        // Paul shows which colors to go for (+2) and which to dodge (−1); then they're hidden
+        const mr = createRng((seed ^ 0x51ed51ed) >>> 0);
+        const four = mr.shuffle(st.slots.map((sl) => sl.color.id)).slice(0, 4);
+        st.memo = { bonus: four.slice(0, 2), penalty: four.slice(2) };
+        setPhase('brief', CONFIG.memory.briefSec);
+        return;
+      }
       beginThrow();
     },
     pause() { st.paused = true; },

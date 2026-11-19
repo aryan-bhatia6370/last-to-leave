@@ -3,7 +3,7 @@
 // Games keep everything they draw in one plain `st` object, so any game can be
 // mirrored by copying `st` (see each game's `options.spectate` hook).
 
-export const MIRROR = { hz: 10, delayMs: 220, buffer: 40 };
+export const MIRROR = { hz: 8, delayMs: 260, buffer: 40 }; // 8/s keeps the player's own game smooth
 
 const round4 = (_k, v) => (typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1e4) / 1e4 : v);
 /** JSON text (kept as a string: the database drops empty arrays and nulls). */
@@ -49,9 +49,17 @@ export function createReceiver() {
 /** Player side: send the state on a timer. Returns stop(). */
 export function startPublisher(getState, write) {
   const t0 = performance.now();
+  let last = '';
+  let busy = false;
   const id = setInterval(() => {
+    if (busy) return; // previous send still going: skip a beat rather than pile up
     const st = getState();
-    if (st) write({ ts: Math.round(performance.now() - t0), j: encodeState(st) });
+    if (!st) return;
+    const j = encodeState(st);
+    if (j === last) return; // nothing moved
+    last = j;
+    busy = true;
+    Promise.resolve(write({ ts: Math.round(performance.now() - t0), j })).finally(() => { busy = false; });
   }, 1000 / MIRROR.hz);
   return () => clearInterval(id);
 }

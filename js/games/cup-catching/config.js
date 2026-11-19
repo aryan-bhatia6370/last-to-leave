@@ -27,10 +27,16 @@ export const CONFIG = {
 
   // You hold the cup at hand height and move it around on a level plane:
   // mouse/finger left-right = left-right, up-down = farther from / closer to your body.
-  hold: {
-    rimY: -0.22,           // rim height relative to your eyes (about waist height)
-    reachZ: [0.5, 2.0],    // closest (against your body) to farthest (arm out) the cup can go
-    startZ: 0.95,
+  // You hold the cup out in front of you at a fixed distance and move it
+  // left/right and up/down (mouse/finger). (2026-11-19: back to this from the
+  // closer/farther version, which was harder to read.)
+  cupDepth: 0.95,
+
+  // Just before a marker arrives, a soft ring shows roughly where it'll come down.
+  hint: {
+    showSec: 0.75,         // starts fading in this long before it reaches the cup
+    radius: 0.11,          // meters: a "general area", bigger than the cup's opening
+    wobble: 0.04,          // meters: the ring's center is only roughly where it lands
   },
 
   // A 16 oz red solo cup.
@@ -72,8 +78,8 @@ export const CONFIG = {
     arcHeightM: [0.9, 1.4], // high lobs: markers come down at ~50–60°, not flat
     windupMs: [380, 520],
     gapMs: [500, 1000],
-    targetZ: [0.7, 1.6],   // where throws come down (distance from you), always inside your reach
-    targetSpreadX: 0.65,   // how far left/right throws can land (0..1 of the reachable width)
+    targetSpreadX: 0.65,   // how far from center throws come down (0..1 of the screen)
+    targetSpreadY: 0.55,
     throwerSpreadX: 0.8,
     spinRadPerSec: [4, 12],
     styles: { overhand: 0.35, sidearm: 0.25, underhand: 0.4 },

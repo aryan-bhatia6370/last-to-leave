@@ -30,24 +30,36 @@
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
             }
-          }
+          },
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
         },
         "race": {
           "$key": {
             "$uid": {
               ".write": "auth != null && auth.uid === $uid"
             }
-          }
+          },
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
         },
         "live": {
           "$key": {
             ".write": "auth != null && root.child('rooms/' + $code + '/members/' + auth.uid).exists()"
-          }
+          },
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
         },
         "requests": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid"
-          }
+          },
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
+        },
+        "racewrong": {
+          "$key": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid"
+            }
+          },
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/host').val() === auth.uid"
         }
       }
     }

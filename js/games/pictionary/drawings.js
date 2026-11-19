@@ -7,6 +7,7 @@
 // recorder (#/draw) can be pasted into this list.
 
 import { MORE_DRAWINGS } from './drawings2.js';
+import { NICHE_DRAWINGS } from './drawings3.js';
 
 const P = (...pts) => ({ t: 'p', pts });
 const S = (...pts) => ({ t: 's', pts });
@@ -125,7 +126,7 @@ const BASE_DRAWINGS = [
     S([31, 46], [50, 50], [69, 46]), S([33, 62], [50, 66], [67, 62])] },
 ];
 
-export const DRAWINGS = [...BASE_DRAWINGS, ...MORE_DRAWINGS];
+export const DRAWINGS = [...BASE_DRAWINGS, ...MORE_DRAWINGS, ...NICHE_DRAWINGS];
 
 // ---------- turning strokes into points ----------
 function catmull(pts, perSeg = 8) {

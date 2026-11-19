@@ -125,15 +125,19 @@ export function createArchery(container, host) {
     paul3d.update(paulPose(B));
     setPoseFromBasis(board3d, B.c, B);
     board3d.scale.set(B.w, B.h, 1);
-    for (const b of st.bodies) {
-      let m = bodyMeshes.get(b);
+    // one mesh per thrown piece, by its slot (spectators get fresh state objects every update)
+    st.bodies.forEach((b, i) => {
+      const key = `${i}:${b.piece.id}`;
+      let m = bodyMeshes.get(key);
       if (!m) {
         m = createFoamPiece(STATE_SHAPES[b.piece.id], b.piece.size, b.piece.thickness, b.piece.color);
         stage.scene.add(m);
-        bodyMeshes.set(b, m);
+        bodyMeshes.set(key, m);
       }
+      m.visible = true;
       setPoseFromBasis(m, b.p, b);
-    }
+    });
+    for (const [key, m] of bodyMeshes) if (Number(key.split(':')[0]) >= st.bodies.length) m.visible = false;
     const showHeld = st.phase === 'setup' || st.phase === 'aim' || st.phase === 'ready';
     heldMeshes.forEach((m, i) => {
       m.visible = showHeld && i === st.throwIndex;
@@ -238,12 +242,13 @@ export function createArchery(container, host) {
         g.fillRect(x0, y0, ww, hh);
         g.strokeRect(x0 + 4, y0 + 4, ww - 8, hh - 8);
       }
-      const [lu, lv] = z.circles ? z.circles[0] : [z.rect[0] + z.rect[2] / 2, z.rect[1] + z.rect[3] / 2];
+      // every hotspot gets its own ×2 label
+      const spots = z.circles ? z.circles.map(([u, v]) => [u, v]) : [[z.rect[0] + z.rect[2] / 2, z.rect[1] + z.rect[3] / 2]];
       g.fillStyle = '#c45a00';
       g.font = `bold ${Math.round(H2 * 0.13)}px "Permanent Marker", sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillText('×2', sx(lu), sy(lv));
+      for (const [lu, lv] of spots) g.fillText('×2', sx(lu), sy(lv));
       g.restore();
     }
     board3d.userData.front.needsUpdate = true;

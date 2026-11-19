@@ -71,6 +71,9 @@ export function createCupThrowing(container, host) {
     paulWalk: 0,
     paulMoving: 0,
     paulFlinch: 0,
+    curPath: [],
+    lastPath: [],
+    pathT: 0,
     finished: false,
   };
 
@@ -304,6 +307,8 @@ export function createCupThrowing(container, host) {
   }
 
   function nextThrow() {
+    st.lastPath = st.curPath;
+    st.curPath = [];
     st.throwIndex++;
     st.active = null;
     if (st.throwIndex >= TOTAL) {
@@ -353,6 +358,11 @@ export function createCupThrowing(container, host) {
         break;
       case 'flight': {
         const m = st.active;
+        // remember this throw's path (shown faintly while you aim the next one)
+        if (!m.decided && !m.onFloor && (!st.curPath.length || st.time - st.pathT > 0.035)) {
+          st.curPath.push(m.p.map((v) => Math.round(v * 1000) / 1000));
+          st.pathT = st.time;
+        }
         const waited = (st.time - st.thrownAt) * 1000;
         if ((m.decided && (m.settled || m.inCup)) || waited > C.maxWaitMs) {
           if (!m.decided) missed(m);
@@ -456,10 +466,32 @@ export function createCupThrowing(container, host) {
     });
   }
 
+  // Two quiet aids (playtest: hard to judge distance): your last throw's path as a
+  // faint dotted line while you aim, and the cup's shadow straight below it.
+  function drawAimHelp() {
+    // how far away the cup is, in meters, just above its rim (a depth cue while aiming)
+    if (st.phase === 'aim' || st.phase === 'setup') {
+      const c = st.cup;
+      const top = cam.project([c.x, CUP_BASE_Y + C.cup.height + 0.06, c.z]);
+      if (top.z > 0.2) drawLabel(ctx, `${c.z.toFixed(1)} m`, top.x, top.y, 18, 'rgba(255,255,255,0.85)', 'center');
+    }
+    if ((st.phase === 'aim' || st.phase === 'setup') && st.lastPath.length > 2) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 7]);
+      ctx.beginPath();
+      st.lastPath.forEach((p, i) => { const q = cam.project(p); if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function render() {
     sync3D();
     stage.render();
     ctx.clearRect(0, 0, cam.W, cam.H);
+    drawAimHelp();
     drawHeld();
     drawHUD();
     popups.draw(ctx);

@@ -39,6 +39,10 @@ export function createBoardStage(container, { boardW = 0.7, boardH = 0.52, board
   const front = mk();
   const back = mk();
   const board = createHandBoard(boardW, boardH, { frontCanvas: front, backCanvas: back });
+  // the back face shows right side up after a top-over flip (see pose)
+  board.userData.back.center.set(0.5, 0.5);
+  board.userData.back.rotation = Math.PI;
+  const posed = { x: 0, crouch: 0, yaw: 0 }; // Paul's smoothed body position
   stage.scene.add(board);
   const paul = createPaul3D();
   stage.scene.add(paul.group);
@@ -81,33 +85,62 @@ export function createBoardStage(container, { boardW = 0.7, boardH = 0.52, board
      * eraseUV: [u, v] while erasing, else null
      */
     pose({ flip = 0, penUV = null, eraseUV = null } = {}) {
+      // Flipping turns the board over top-to-bottom while he holds it by its left and
+      // right edges (the axis runs through his hands), so his arms never cross or go
+      // through it. The back face's picture is turned 180° to read right side up.
       board.position.set(0, boardY, -boardZ);
-      board.rotation.set(0, flip, 0);
+      board.rotation.set(flip, 0, 0);
       board.updateMatrixWorld(true);
-      const leftHand = local(-boardW / 2 + 0.012, -boardH * 0.12, -0.03);
-      let rightHand = local(boardW / 2 - 0.012, -boardH * 0.12, -0.03);
-      let rightElbow = null;
       pen.visible = false;
       if (eraser) eraser.visible = false;
+      const tool = penUV || (eraseUV && eraser ? eraseUV : null);
+      if (!tool) {
+        // holding it up from behind, one hand on each side edge
+        posed.x += (0 - posed.x) * 0.15;
+        posed.crouch += (0 - posed.crouch) * 0.15;
+        posed.yaw += (0 - posed.yaw) * 0.15;
+        paul.update({
+          x: posed.x, z: boardZ + 0.3, floorY: floorY - posed.crouch, yaw: posed.yaw,
+          leftHand: local(-boardW / 2 - 0.005, 0, -0.01), rightHand: local(boardW / 2 + 0.005, 0, -0.01),
+        });
+        return;
+      }
+      // Drawing / erasing like a person at an easel: he stands beside the board (your
+      // right), holds its edge with his left hand, and moves along with the pen — stepping
+      // over and bending down for low spots — so his arm always reaches (no stretching).
+      // Anything of his that's in front of the drawing turns see-through.
+      const tx = (tool[0] - 0.5) * boardW, ty = (0.5 - tool[1]) * boardH;
+      const tipW = local(tx, ty, 0);
+      let hand;
       if (penUV) {
-        const px = (penUV[0] - 0.5) * boardW, py = (0.5 - penUV[1]) * boardH;
-        const tip = local(px, py, 0.006);
-        const butt = local(px + 0.05, py - 0.08, 0.11);
+        const tip = local(tx, ty, 0.006);
+        const butt = local(tx + 0.05, ty - 0.08, 0.11);
         setRodPose(pen, butt, tip);
         pen.visible = true;
-        rightHand = local(px + 0.035, py - 0.06, 0.085);
-        // he's behind the board: the arm comes over the top edge, see-through so the sketch stays visible
-        rightElbow = local(px * 0.5 + 0.08, boardH / 2 + 0.1, 0.02);
-      } else if (eraseUV && eraser) {
-        const ex = (eraseUV[0] - 0.5) * boardW, ey = (0.5 - eraseUV[1]) * boardH;
-        eraser.position.copy(v.set(ex, ey, 0.027));
+        hand = local(tx + 0.035, ty - 0.06, 0.085);
+      } else {
+        eraser.position.copy(v.set(tx, ty, 0.027));
         board.localToWorld(eraser.position);
         eraser.quaternion.copy(board.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2));
         eraser.visible = true;
-        rightHand = local(ex, ey - 0.01, 0.07);
-        rightElbow = local(ex * 0.5 + 0.08, boardH / 2 + 0.1, 0.02);
+        hand = local(tx, ty - 0.01, 0.07);
       }
-      paul.update({ x: 0, z: boardZ + 0.32, floorY, yaw: 0, leftHand, rightHand, rightElbow, rightArmOpacity: rightElbow ? 0.35 : 1 });
+      const edge = boardW / 2;
+      const wantX = Math.min(edge + 0.36, Math.max(tipW[0] + 0.48, edge - 0.1));
+      const shoulderY0 = floorY + 1.43;
+      const wantCrouch = Math.max(0, Math.min(0.22, shoulderY0 - (tipW[1] + 0.42)));
+      posed.x += (wantX - posed.x) * 0.12;
+      posed.crouch += (wantCrouch - posed.crouch) * 0.12;
+      posed.yaw += (0.75 - posed.yaw) * 0.12;
+      const inFront = posed.x - 0.24 < edge; // his body is over the board on screen
+      paul.update({
+        x: posed.x, z: boardZ - 0.06, floorY: floorY - posed.crouch, yaw: posed.yaw,
+        leftHand: local(edge - 0.01, -boardH * 0.28, 0.012),
+        rightHand: hand,
+        rightPole: [0.4, -0.7, -0.5], // elbow out to his side, down, toward you (never into the board)
+        opacity: inFront ? 0.45 : 1,
+        rightArmOpacity: 0.4,
+      });
     },
     render() { stage.render(); },
     destroy() { stage.destroy(); },

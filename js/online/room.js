@@ -17,9 +17,19 @@ export const ONLINE = {
   codeChars: 'ABCDEFGHJKMNPQRSTUVWXYZ23456789',
   codeLength: 5,
   maxSeats: 8,
-  minRealForBoards: 3, // online leaderboards need 3+ real people in the room
+  minRealForBoards: 3, // (legacy name) leaderboards need 3+ at the table, real or computer
 };
 
+/**
+ * Which leaderboards an online game counts for (decided 2026-11-19):
+ * 3+ at the table is required. More real players than computers (or a tie) =
+ * online boards; more computers than real players = the offline (computer) boards.
+ * Returns 'online' | 'offline' | null.
+ */
+export function boardsFor(real, total) {
+  if (total < 3) return null;
+  return real >= total - real ? 'online' : 'offline';
+}
 export const isCode = (c) => new RegExp(`^[${ONLINE.codeChars}]{${ONLINE.codeLength}}$`).test(c);
 
 export async function createRoom(uid) {

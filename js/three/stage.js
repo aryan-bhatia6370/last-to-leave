@@ -43,8 +43,12 @@ export function createStage3D(container, { onResize, getCam } = {}) {
   camera.position.set(0, 0, 0);
   camera.lookAt(0, 0, -1);
 
+  // Big screens (fullscreen on a PC) at 2x sharpness can exceed what the GPU will
+  // draw, which shows up as a gray screen. Cap the total pixels instead.
+  const MAX_PIXELS = 4.2e6;
   function matchCam(cam, size) {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(MAX_PIXELS / Math.max(1, cam.W * cam.H)));
+    renderer.setPixelRatio(Math.max(0.75, dpr));
     renderer.setSize(cam.W, cam.H, false);
     camera.fov = (2 * Math.atan(cam.H / 2 / cam.f) * 180) / Math.PI;
     camera.aspect = cam.W / cam.H;
@@ -52,7 +56,12 @@ export function createStage3D(container, { onResize, getCam } = {}) {
     camera.setViewOffset(cam.W, cam.H, cam.W / 2 - cam.cx, cam.H / 2 - cam.cy, cam.W, cam.H);
     camera.updateProjectionMatrix();
     void size;
+    // resizing clears the picture: draw again right away instead of flashing blank until the next frame
+    try { renderer.render(scene, camera); } catch { /* scene still loading */ }
   }
+
+  // if the GPU drops the canvas (it can on resize), let three.js restore it
+  gl.addEventListener('webglcontextlost', (e) => e.preventDefault());
 
   // The HUD canvas goes on top (it also receives pointer input).
   const hud = createCanvas(container, (size) => {

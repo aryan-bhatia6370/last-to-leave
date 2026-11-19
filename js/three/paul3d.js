@@ -4,7 +4,8 @@
 // placeholder looks until the user sends their pictures).
 // Posed every frame:
 //   { x, z, floorY, yaw, walk, moving, sit (0..1), leftHand, rightHand, bulge }  (game coordinates)
-//   optional: rightElbow (force the right elbow), rightArmOpacity (0..1, see-through arm), flinch (0..1, just got hit)
+//   optional: rightPole (which way the right elbow bends), rightArmOpacity (0..1, see-through arm),
+//   opacity (0..1, the whole person see-through), flinch (0..1, just got hit)
 // Hands are world positions; null = resting (at his side, or on his lap when seated).
 
 import * as THREE from 'three';
@@ -21,11 +22,29 @@ function toWorld(p, lx, ly, lz) {
   return [p.x + lx * c + lz * s, p.floorY + ly, p.z - lx * s + lz * c];
 }
 
-function elbowFor(shoulder, hand, out) {
-  const mid = [(shoulder[0] + hand[0]) / 2, (shoulder[1] + hand[1]) / 2, (shoulder[2] + hand[2]) / 2];
-  const d = Math.hypot(hand[0] - shoulder[0], hand[1] - shoulder[1], hand[2] - shoulder[2]);
-  const bend = Math.max(0, 0.6 - d);
-  return [mid[0] + out[0] * bend * 0.6, mid[1] - bend * 0.45, mid[2] + out[2] * bend * 0.6 + bend * 0.25];
+// Arms have fixed bone lengths (no more stretching). If a hand target is out of
+// reach the arm straightens toward it (a little give, then it just falls short).
+const ARM = { upper: 0.29, fore: 0.31, give: 1.06 };
+
+/** Two-bone IK: returns { elbow, hand } with fixed segment lengths. pole = which way the elbow points. */
+function solveArm(shoulder, target, pole) {
+  const L1 = ARM.upper, L2 = ARM.fore;
+  let dir = [target[0] - shoulder[0], target[1] - shoulder[1], target[2] - shoulder[2]];
+  let d = Math.hypot(...dir) || 1e-6;
+  dir = dir.map((v) => v / d);
+  const maxD = (L1 + L2) * 0.999;
+  let s = 1;
+  if (d > maxD) { s = Math.min(ARM.give, d / maxD); d = Math.min(d, maxD * s); }
+  const l1 = L1 * s, l2 = L2 * s;
+  const hand = [shoulder[0] + dir[0] * d, shoulder[1] + dir[1] * d, shoulder[2] + dir[2] * d];
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const pd = pole[0] * dir[0] + pole[1] * dir[1] + pole[2] * dir[2];
+  let perp = [pole[0] - dir[0] * pd, pole[1] - dir[1] * pd, pole[2] - dir[2] * pd];
+  const pl = Math.hypot(...perp) || 1;
+  perp = perp.map((v) => v / pl);
+  const elbow = [shoulder[0] + dir[0] * a + perp[0] * h, shoulder[1] + dir[1] * a + perp[1] * h, shoulder[2] + dir[2] * a + perp[2] * h];
+  return { elbow, hand };
 }
 
 const lerpN = (a, b, t) => a + (b - a) * t;
@@ -40,6 +59,11 @@ export function createPaul3D() {
 /**
  * look: { skin, shirt, pants, hair, shoe, lanyard (bool) } as 0xRRGGBB numbers
  * extras: shirtless (bool), muscle (1 = normal, bigger = bulkier arms/chest), heightScale (1 = normal), sigma (stern face + smirk)
+ * character looks (Members, from reference photos; colors stay their marker color):
+ *   hairStyle: 'default' | 'curly' | 'fringe' | 'curtain' | 'spiky' | 'shaggy' | 'messy' | 'mop'
+ *   top: 'polo' | 'hoodie' (pullover, front pocket) | 'zipHoodie' (closed) | 'openHoodie' (open over an inner shirt)
+ *   inner (color of the shirt under an open hoodie), shorts (bool), glasses (bool), glassesColor,
+ *   mustache (bool), goatee (bool), backpack (color), lanyardColor, idCard (bool), width (body width, 1 = normal)
  */
 export function createPerson3D(look = PAUL_LOOK) {
   const L0 = { ...PAUL_LOOK, lanyard: false, ...look };
@@ -52,11 +76,17 @@ export function createPerson3D(look = PAUL_LOOK) {
     hair: new THREE.MeshStandardMaterial({ color: L0.hair, roughness: 0.72 }),
     shoe: new THREE.MeshStandardMaterial({ color: L0.shoe, roughness: 0.45 }),
     belt: new THREE.MeshStandardMaterial({ color: 0x2a1e16, roughness: 0.5 }),
-    lanyard: new THREE.MeshStandardMaterial({ color: 0x1f3a8a, roughness: 0.6 }),
+    lanyard: new THREE.MeshStandardMaterial({ color: L0.lanyardColor ?? 0x1f3a8a, roughness: 0.6 }),
     card: new THREE.MeshStandardMaterial({ color: 0xf6f6f6, roughness: 0.35 }),
     eye: new THREE.MeshStandardMaterial({ color: 0x3b2a20, roughness: 0.25 }),
     brow: new THREE.MeshStandardMaterial({ color: 0x2f2219, roughness: 0.8 }),
     lip: new THREE.MeshStandardMaterial({ color: 0xc98f86, roughness: 0.5 }),
+    sock: new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 }),
+    inner: new THREE.MeshStandardMaterial({ color: L0.inner ?? 0x1c1c20, roughness: 0.88 }),
+    pocket: new THREE.MeshStandardMaterial({ color: new THREE.Color(L0.shirt).multiplyScalar(0.8), roughness: 0.9 }),
+    trim: new THREE.MeshStandardMaterial({ color: 0xd9d9d9, roughness: 0.4, metalness: 0.3 }),
+    frames: new THREE.MeshStandardMaterial({ color: L0.glassesColor ?? 0x1a1a1c, roughness: 0.35, metalness: 0.2 }),
+    pack: new THREE.MeshStandardMaterial({ color: L0.backpack ?? 0x2a2a2e, roughness: 0.8 }),
   };
   const mesh = (geo, mat, parent = group) => {
     const m = new THREE.Mesh(geo, mat);
@@ -73,7 +103,8 @@ export function createPerson3D(look = PAUL_LOOK) {
   group.add(body);
   const lathe = (pts) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), 32);
   const hips = mesh(lathe([[0, -0.115], [0.16, -0.115], [0.172, -0.06], [0.17, 0.0], [0, 0.0]]), mats.khaki, body);
-  hips.scale.set(1, 1, 0.68);
+  const WIDE = L0.width || 1;
+  hips.scale.set(WIDE, 1, 0.68);
   // front pocket openings on the khakis, and a bulge for when his hand is in one
   const slitMat = new THREE.MeshStandardMaterial({ color: 0x4a3c2a, roughness: 0.95 });
   for (const sx of [-1, 1]) {
@@ -90,7 +121,7 @@ export function createPerson3D(look = PAUL_LOOK) {
   if (L0.shirtless) mats.polo = mats.skin; // no shirt: torso and sleeves are skin
   const torso = mesh(lathe([[0, 0.0], [0.168, 0.0], [0.172, 0.08], [0.178, 0.22], [0.195, 0.34], [0.2, 0.42], [0.18, 0.47], [0.1, 0.5], [0.05, 0.505], [0, 0.505]]), mats.polo, body);
   // a broader, deeper chest for a muscular build (narrow waist stays)
-  torso.scale.set(1 + (MUSCLE - 1) * 0.35, 1, 0.62 + (MUSCLE - 1) * 0.12);
+  torso.scale.set((1 + (MUSCLE - 1) * 0.35) * WIDE, 1, (0.62 + (MUSCLE - 1) * 0.12) * (1 + (WIDE - 1) * 0.6));
   if (L0.shirtless) {
     const zAt = (r) => r * torso.scale.z;
     // pecs
@@ -114,11 +145,12 @@ export function createPerson3D(look = PAUL_LOOK) {
   }
   // collar + placket
   const collar = mesh(new THREE.TorusGeometry(0.062, 0.014, 10, 28), mats.polo, body);
-  collar.visible = !L0.shirtless;
+  const TOP = L0.top || 'polo';
+  collar.visible = !L0.shirtless && TOP === 'polo';
   collar.rotation.x = Math.PI / 2 - 0.25;
   collar.position.set(0, 0.5, 0.012);
   const placket = mesh(new THREE.BoxGeometry(0.03, 0.12, 0.006), mats.polo, body);
-  placket.visible = !L0.shirtless;
+  placket.visible = !L0.shirtless && TOP === 'polo';
   placket.position.set(0, 0.42, 0.118);
   // lanyard + ID card
   for (const sx of (L0.lanyard ? [-1, 1] : [])) {
@@ -128,7 +160,7 @@ export function createPerson3D(look = PAUL_LOOK) {
     strap.rotation.z = sx * 0.14;
     strap.rotation.x = -0.12;
   }
-  if (L0.lanyard) {
+  if (L0.lanyard && L0.idCard !== false) {
     const card = mesh(new THREE.BoxGeometry(0.054, 0.085, 0.003), mats.card, body);
     card.position.set(0, 0.235, 0.128);
     card.rotation.x = -0.08;
@@ -187,20 +219,127 @@ export function createPerson3D(look = PAUL_LOOK) {
     jaw.position.set(0, -0.07, 0.012);
   }
 
+  // ---- character details (hair, glasses, facial hair, hoodies, backpack) ----
+  const HAIR = L0.hairStyle || 'default';
+  if (HAIR !== 'default') {
+    hairCap.visible = HAIR === 'fringe' || HAIR === 'curtain' || HAIR === 'spiky';
+    hairBack.visible = HAIR !== 'spiky';
+    fringe.visible = false;
+    const blob = (x, y, z, sx, sy, sz, rx = 0, rz = 0) => { const m = mesh(sph, mats.hair, head); m.scale.set(sx, sy, sz); m.position.set(x, y, z); m.rotation.set(rx, 0, rz); return m; };
+    if (HAIR === 'curly') {
+      // tall curly mop: lots of little curls piled on top and around the sides
+      for (let i = 0; i < 46; i++) {
+        const a = (i / 46) * Math.PI * 2 * 3.7, ring = i / 46;
+        const r = 0.065 + Math.sin(i * 1.7) * 0.012;
+        blob(Math.cos(a) * r * (1 - ring * 0.5), 0.05 + ring * 0.07 + Math.sin(i * 2.3) * 0.012, Math.sin(a) * r * (1 - ring * 0.5) - 0.012, 0.03, 0.028, 0.03);
+      }
+      blob(0, 0.06, -0.01, 0.092, 0.07, 0.095);
+    } else if (HAIR === 'fringe') {
+      // straight hair with a full fringe across the forehead
+      blob(0, 0.058, 0.055, 0.084, 0.032, 0.05, 0.5);
+      blob(-0.07, 0.01, 0.02, 0.025, 0.05, 0.05);
+      blob(0.07, 0.01, 0.02, 0.025, 0.05, 0.05);
+    } else if (HAIR === 'curtain') {
+      // medium-length, parted in the middle, falling past the ears
+      blob(-0.045, 0.05, 0.05, 0.05, 0.04, 0.045, 0.6, 0.35);
+      blob(0.045, 0.05, 0.05, 0.05, 0.04, 0.045, 0.6, -0.35);
+      blob(-0.082, -0.01, 0.0, 0.026, 0.075, 0.07);
+      blob(0.082, -0.01, 0.0, 0.026, 0.075, 0.07);
+      blob(0, -0.01, -0.05, 0.088, 0.09, 0.06);
+    } else if (HAIR === 'spiky') {
+      // short black hair pushed up into a few spikes
+      for (let i = 0; i < 7; i++) {
+        const cone = mesh(new THREE.ConeGeometry(0.018, 0.05, 8), mats.hair, head);
+        const a = -0.9 + i * 0.3;
+        cone.position.set(Math.sin(a) * 0.05, 0.11 + Math.cos(i) * 0.006, 0.02 - Math.abs(a) * 0.02);
+        cone.rotation.set(-0.25, 0, -a * 0.6);
+      }
+    } else if (HAIR === 'shaggy' || HAIR === 'mop' || HAIR === 'messy') {
+      // big shaggy volume, covering the ears, with a heavy messy fringe
+      const big = HAIR === 'messy' ? 1.12 : HAIR === 'mop' ? 0.95 : 1.05;
+      blob(0, 0.05, -0.008, 0.1 * big, 0.08 * big, 0.105 * big);
+      blob(-0.07, 0.0, 0.0, 0.035, 0.065, 0.075);
+      blob(0.07, 0.0, 0.0, 0.035, 0.065, 0.075);
+      for (let i = 0; i < 5; i++) blob(-0.05 + i * 0.025, 0.055 - Math.abs(i - 2) * 0.008, 0.07, 0.022, 0.035, 0.02, 0.4, (i - 2) * 0.25);
+      if (HAIR === 'messy') for (let i = 0; i < 9; i++) blob(Math.sin(i * 2.1) * 0.06, 0.1 + Math.cos(i * 1.3) * 0.015, Math.cos(i * 2.1) * 0.05 - 0.01, 0.03, 0.022, 0.03, i * 0.4, i * 0.7);
+    }
+  }
+  if (L0.glasses) {
+    for (const sx of [-1, 1]) {
+      const rim = mesh(new THREE.TorusGeometry(0.022, 0.0032, 6, 20), mats.frames, head);
+      rim.scale.set(1.15, 0.8, 1);
+      rim.position.set(sx * 0.034, 0.014, 0.103);
+      const arm = mesh(new THREE.BoxGeometry(0.003, 0.003, 0.09), mats.frames, head);
+      arm.position.set(sx * 0.084, 0.018, 0.058);
+    }
+    const bridge = mesh(new THREE.BoxGeometry(0.02, 0.003, 0.003), mats.frames, head);
+    bridge.position.set(0, 0.018, 0.104);
+  }
+  if (L0.mustache) {
+    const m = mesh(sph, mats.hair, head);
+    m.scale.set(0.024, 0.0045, 0.006);
+    m.position.set(0, -0.03, 0.097);
+  }
+  if (L0.goatee) {
+    const g = mesh(sph, mats.hair, head);
+    g.scale.set(0.012, 0.014, 0.008);
+    g.position.set(0, -0.072, 0.086);
+  }
+  if (!L0.shirtless && TOP !== 'polo') {
+    // hood bunched up behind the neck
+    const hood = mesh(new THREE.TorusGeometry(0.075, 0.028, 10, 24), mats.polo, body);
+    hood.rotation.x = Math.PI / 2 - 0.4;
+    hood.position.set(0, 0.5, -0.03);
+    if (TOP === 'hoodie') {
+      const pocket = mesh(new THREE.BoxGeometry(0.2, 0.09, 0.012), mats.pocket, body);
+      pocket.position.set(0, 0.11, 0.115 * WIDE);
+      for (const sx of [-1, 1]) { // drawstrings
+        const str = mesh(cyl, mats.pocket, body);
+        str.scale.set(0.003, 0.09, 0.003);
+        str.position.set(sx * 0.03, 0.42, 0.122);
+      }
+    } else {
+      // zip hoodie: a zipper down the front; open = the shirt underneath shows between the sides
+      const open = TOP === 'openHoodie';
+      if (open) {
+        const panel = mesh(new THREE.BoxGeometry(0.11, 0.46, 0.01), mats.inner, body);
+        panel.position.set(0, 0.24, 0.115 * WIDE + 0.004);
+      }
+      for (const sx of (open ? [-1, 1] : [0])) {
+        const zip = mesh(new THREE.BoxGeometry(0.006, 0.46, 0.006), mats.trim, body);
+        zip.position.set(sx * 0.056, 0.24, 0.122 * WIDE);
+      }
+    }
+  }
+  if (L0.backpack != null) {
+    const pack = mesh(new THREE.BoxGeometry(0.28, 0.38, 0.14), mats.pack, body);
+    pack.position.set(0, 0.27, -0.17);
+    for (const sx of [-1, 1]) {
+      const strap = mesh(new THREE.BoxGeometry(0.035, 0.36, 0.012), mats.pack, body);
+      strap.position.set(sx * 0.085, 0.3, 0.118 * WIDE);
+    }
+  }
+
   // ---- limbs (re-posed every frame) ----
   const limb = (r, mat) => { const m = mesh(cyl, mat); m.userData.r = r; return m; };
   const joint = (r, mat) => { const m = mesh(sph, mat); m.scale.setScalar(r); return m; };
+  const lower = L0.shorts ? mats.skin : mats.khaki; // shorts: bare shins
   const legs = [-1, 1].map(() => ({
-    thigh: limb(0.074, mats.khaki), knee: joint(0.068, mats.khaki), shin: limb(0.063, mats.khaki),
-    cuff: joint(0.064, mats.khaki), shoe: mesh(new THREE.CapsuleGeometry(0.045, 0.17, 6, 12), mats.shoe),
+    thigh: limb(0.074, mats.khaki), knee: joint(L0.shorts ? 0.05 : 0.068, lower), shin: limb(L0.shorts ? 0.048 : 0.063, lower),
+    cuff: joint(L0.shorts ? 0.045 : 0.064, L0.shorts ? mats.sock : mats.khaki), shoe: mesh(new THREE.CapsuleGeometry(0.045, 0.17, 6, 12), mats.shoe),
   }));
   // the right arm gets its own materials so it can turn see-through (drawing on the whiteboard)
   const armMats = [{ skin: mats.skin, polo: mats.polo }, { skin: mats.skin.clone(), polo: mats.polo.clone() }];
   const M = MUSCLE;
-  const arms = [-1, 1].map((_, i) => ({
-    shoulder: joint(0.062 * (1 + (M - 1) * 0.9), armMats[i].polo), sleeve: limb(0.06 * M, armMats[i].polo), upper: limb(0.042 * M, armMats[i].skin),
-    elbow: joint(0.042 * (1 + (M - 1) * 0.6), armMats[i].skin), fore: limb(0.037 * (1 + (M - 1) * 0.7), armMats[i].skin), hand: mesh(sph, armMats[i].skin),
-  }));
+  const LONG = TOP !== 'polo' && !L0.shirtless; // hoodies have long sleeves
+  const arms = [-1, 1].map((_, i) => {
+    const arm = LONG ? armMats[i].polo : armMats[i].skin;
+    const k = LONG ? 1.22 : 1; // sleeves are a bit puffier than bare arms
+    return {
+      shoulder: joint(0.062 * (1 + (M - 1) * 0.9), armMats[i].polo), sleeve: limb(0.06 * M, armMats[i].polo), upper: limb(0.042 * M * k, arm),
+      elbow: joint(0.042 * (1 + (M - 1) * 0.6) * k, arm), fore: limb(0.037 * (1 + (M - 1) * 0.7) * k, arm), hand: mesh(sph, armMats[i].skin),
+    };
+  });
   let rightOpacity = 1;
   function setRightArmOpacity(o) {
     if (o === rightOpacity) return;
@@ -226,8 +365,24 @@ export function createPerson3D(look = PAUL_LOOK) {
   }
   function at(m, p) { toThree(p, m.position); }
 
+  // whole-person see-through (e.g. Paul in front of the whiteboard while he draws)
+  let bodyOpacity = 1;
+  function setBodyOpacity(o) {
+    if (o === bodyOpacity) return;
+    bodyOpacity = o;
+    const all = new Set([...Object.values(mats), armMats[0].skin, armMats[0].polo]);
+    for (const m of all) {
+      if (!m || !m.isMaterial) continue;
+      m.transparent = o < 1;
+      m.opacity = o;
+      m.depthWrite = o >= 1;
+      m.needsUpdate = true;
+    }
+  }
+
   function update(p) {
-    setRightArmOpacity(p.rightArmOpacity ?? 1);
+    setBodyOpacity(p.opacity ?? 1);
+    setRightArmOpacity(Math.min(p.rightArmOpacity ?? 1, p.opacity ?? 1));
     // flinch (0..1): something just hit him. A tiny step back and a wobble, then he's back in place.
     const fl = p.flinch || 0;
     if (fl > 0) p = { ...p, x: p.x + Math.sin(fl * 18) * 0.012 * fl, z: p.z + 0.03 * fl };
@@ -271,9 +426,11 @@ export function createPerson3D(look = PAUL_LOOK) {
     [-1, 1].forEach((side, i) => {
       const A = arms[i];
       const shoulder = toWorld(p, side * 0.2, beltY + (H.shoulder - H.belt), 0);
-      const hand = hands[side];
       const out = [toWorld(p, side, 0, 0)[0] - p.x, 0, toWorld(p, side, 0, 0)[2] - p.z];
-      const elbow = (side === 1 && p.rightElbow) || elbowFor(shoulder, hand, out);
+      const back = [toWorld(p, 0, 0, 1)[0] - p.x, 0, toWorld(p, 0, 0, 1)[2] - p.z];
+      // elbows point out to the side, down and a bit back (or where the caller asks)
+      const pole = (side === 1 && p.rightPole) || [out[0] * 0.7 + back[0] * 0.3, -0.6, out[2] * 0.7 + back[2] * 0.3];
+      const { elbow, hand } = solveArm(shoulder, hands[side], pole);
       const sleeveEnd = [shoulder[0] + (elbow[0] - shoulder[0]) * 0.5, shoulder[1] + (elbow[1] - shoulder[1]) * 0.5, shoulder[2] + (elbow[2] - shoulder[2]) * 0.5];
       at(A.shoulder, shoulder);
       place(A.sleeve, shoulder, sleeveEnd);

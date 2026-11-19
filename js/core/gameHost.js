@@ -120,6 +120,13 @@ class GameSession {
     this.outlet.querySelectorAll('[data-opt]').forEach((input) => {
       input.addEventListener('change', () => {
         this.opts[input.dataset.opt] = input.checked;
+        // some options can't be on together (e.g. Memory and Endless)
+        const o = this.def.options.find((x) => x.id === input.dataset.opt);
+        if (input.checked && o?.excludes) for (const ex of o.excludes) {
+          this.opts[ex] = false;
+          const other = this.outlet.querySelector(`[data-opt="${ex}"]`);
+          if (other) other.checked = false;
+        }
         saveOptions(this.def, this.opts);
         this.updateSetupInfo();
       });

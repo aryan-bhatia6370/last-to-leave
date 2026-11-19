@@ -1,3 +1,6 @@
+/* the hidden attribute always wins over display rules (buttons, panels...) */
+[hidden] { display: none !important; }
+
 /* =========================================================
    Last to Leave — site style
    Realistic look: dark glass panels over a backdrop that echoes the
@@ -692,7 +695,7 @@ a.game-card:hover, a.game-card:focus-visible {
 }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .shake { animation: shake 0.25s 2; }
-.watching .comp-quit { top: auto; left: auto; bottom: max(14px, env(safe-area-inset-bottom)); right: max(14px, env(safe-area-inset-right)); }
+.watching .comp-quit { top: max(56px, calc(env(safe-area-inset-top) + 48px)); left: auto; bottom: auto; right: max(12px, env(safe-area-inset-right)); }
 .bowl-flip { position: absolute; z-index: 3; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); background: rgba(15, 10, 20, 0.6); }
 .watching .bowl-flip { display: none; }
 .pocket-chips {
@@ -719,3 +722,12 @@ a.game-card:hover, a.game-card:focus-visible {
 .wn-list h3 { margin: 0 0 6px; font-size: 1.02rem; color: var(--text); }
 .wn-list ul { margin: 0; padding-left: 1.2em; color: var(--text-soft); line-height: 1.45; }
 .wn-list li + li { margin-top: 5px; }
+
+@media (max-width: 560px) {
+  .lb-controls .seg:first-child { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; border-radius: 18px; }
+  .lb-controls .seg:first-child button { border-radius: 14px; }
+}
+.pool-pick { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.pool-pick input { width: 18px; height: 18px; accent-color: var(--accent); }
+.mode-seg { margin-bottom: 6px; }
+.muted.small { font-size: 0.85rem; margin: 4px 0 10px; }

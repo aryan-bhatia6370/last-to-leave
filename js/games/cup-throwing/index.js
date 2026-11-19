@@ -13,6 +13,7 @@ export default {
     '<strong>Press where you want to throw from</strong> (the marker follows you), <strong>flick up, and let go</strong>. A faster flick throws farther; it goes where your flick points.',
     'Get it in the red solo cup. Close calls hit the rim and might rattle in… or out.',
     'Every marker stays where it lands, in the cup or on the floor.',
+    'Helpers: your last throw\'s path stays as a faint dotted line while you aim, and the cup\'s distance (in meters) shows above it.',
     `All 8 colors, one at a time. Land ${CONFIG.passScore} to survive. Still the hardest game here.`,
   ],
   options: [

@@ -9,6 +9,15 @@ export const CONFIG = {
   resolvePauseMs: 600,     // pause after a catch/miss before the next throw starts
   finishDelayMs: 800,      // pause after the last throw before the results screen
 
+  // Memory mode: before the throws, Paul shows you 4 of the 8 colors: two worth
+  // +2 if you catch them, two worth −1. Then you have to remember. Not with Endless.
+  memory: {
+    briefSec: 5,
+    bonusPoints: 2,
+    penaltyPoints: -1,
+    passScore: 4,          // points (out of 8: 2 bonus × 2 + 4 normal) to survive
+  },
+
   endless: {
     strikes: 3,              // misses allowed before the run ends
     speedRampPerCatch: 0.025, // throws get 2.5% faster per catch...
@@ -66,7 +75,8 @@ export const CONFIG = {
   catching: {
     hitPadding: 0.03,        // extra grab room around the marker, as a fraction of the screen's short side
     touchMinPaddingPx: 26,   // fingers are less precise than a mouse: at least this much grab room on touch
-    fumbleCooldownMs: 250,   // after a bad grab your hand is busy for this long
+    fumbleCooldownMs: 250,   // after a bad grab your hand is busy for this long...
+    fumbleStackMs: 200,      // ...plus this much more for every earlier bad grab on the same throw (stops spam-clicking; not shown)
     graceAfterPlaneMs: 40,   // tiny extra time after it passes your hands
   },
 };

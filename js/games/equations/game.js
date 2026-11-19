@@ -8,7 +8,7 @@ import { createRng } from '../../core/rng.js';
 import { createCanvas } from '../../core/canvas.js';
 import { startLoop } from '../../shared/gameLoop.js';
 import { createAnswerBar, createRoundClock } from '../../shared/answerBar.js';
-import { createPopups, drawLabel } from '../../shared/hud.js';
+import { createPopups, drawLabel, drawRacerLockouts } from '../../shared/hud.js';
 import { renderWall, boardRect, drawWhiteboard, drawClock, drawRounds } from '../../shared/boardScene.js';
 import { drawMath, measureMath } from '../../shared/mathText.js';
 import { createBoardStage } from '../../three/boardStage.js';
@@ -89,6 +89,7 @@ export function createEquations(container, host) {
       if (compete) {
         st.lockUntil = st.raceT + C.raceLockoutSec;
         bar.setEnabled(false);
+        compete.onWrong?.(); // let the other racers see it
         popups.add(`Nope! Wait ${C.raceLockoutSec}s`, size.w / 2, size.h * 0.24, BAD, 30);
         return;
       }
@@ -237,6 +238,7 @@ export function createEquations(container, host) {
     ctx.clearRect(0, 0, size.w, size.h);
     const p = problems[Math.min(st.round, problems.length - 1)];
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
+    if (compete) drawRacerLockouts(ctx, size, compete.racers, st.raceT, C.raceLockoutSec);
     else if (rush) {
       drawLabel(ctx, 'RUSH · SOLVED', 16, 26, 15, '#5b5b66');
       drawLabel(ctx, `${st.solved}`, 16, 70, 44, '#1f1f22');

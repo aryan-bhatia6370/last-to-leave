@@ -6,13 +6,14 @@
 import { onAccount } from '../core/account.js';
 import { DEBUG, escapeHtml, ensureFonts } from '../core/env.js';
 import { CHARACTERS, competitionGames, isRaceGame, maxScoreFor } from '../competition/engine.js';
-import { ONLINE, isCode, createRoom, roomExists, joinRoom, claimChar, setMeta, setReady, sendRequest, subscribeRoom, effectiveHost } from './room.js';
+import { ONLINE, boardsFor, isCode, createRoom, roomExists, joinRoom, claimChar, setMeta, setReady, sendRequest, subscribeRoom, effectiveHost } from './room.js';
 import { buildRun, startReferee } from './referee.js';
+import { MODE_INFO } from '../competition/page.js';
 import { rtdb } from './net.js';
 import { createReceiver, startPublisher } from './mirror.js';
 import { runPerformance } from './performance.js';
 import { scores } from '../core/scores.js';
-import { recordOnlineRun } from '../core/leaderboard.js';
+import { recordOnlineRun, recordBotMajorityRun } from '../core/leaderboard.js';
 
 const PER_PLAYER_ORDER = ['marker-catching'];
 const mixSeed = (seed, uid) => { let h = seed >>> 0; for (const ch of uid) h = Math.imul(h ^ ch.charCodeAt(0), 2654435761) >>> 0; return h; };
@@ -122,6 +123,7 @@ class Lobby {
   constructor(outlet, code, me) {
     this.code = code;
     this.me = me;
+    setReady(code, me.uid, false).catch(() => {}); // a new game: everyone presses Ready again
     const link = `${location.origin}${location.pathname}#/room/${code}`;
     const games = competitionGames();
     outlet.innerHTML = `
@@ -147,13 +149,20 @@ class Lobby {
                   <span class="stepper-num" data-cpucount>0</span>
                   <button class="btn btn-small" data-cpu="1" aria-label="More computer players">+</button>
                 </div>
-                <h2 style="margin-top:22px">Game versions</h2>
+                <h2 style="margin-top:22px">How to win</h2>
+                <div class="seg mode-seg" data-modes>
+                  <button type="button" data-mode="elimination">Elimination</button>
+                  <button type="button" data-mode="points">Points (5 rounds)</button>
+                </div>
+                <p class="muted small" data-modeinfo></p>
+                <h2 style="margin-top:22px">Games &amp; versions</h2>
+                <p class="muted small">Untick a game to leave it out of the pool.</p>
                 <div class="versions">
                   ${games.map((g) => {
                     const alts = g.variants.filter((v) => v.id !== 'regular');
-                    return `<label class="version-row"><span>${escapeHtml(g.name)}</span>
+                    return `<div class="version-row"><label class="pool-pick"><input type="checkbox" data-pool="${g.id}" checked><span>${escapeHtml(g.name)}</span></label>
                       ${alts.length ? `<select data-ver="${g.id}"><option value="random">Random (mostly normal)</option><option value="normal">Normal only</option>
-                      ${alts.map((v) => `<option value="${v.id}">Only ${escapeHtml(v.label)}</option>`).join('')}</select>` : '<span class="muted">One version</span>'}</label>`;
+                      ${alts.map((v) => `<option value="${v.id}">Only ${escapeHtml(v.label)}</option>`).join('')}</select>` : '<span class="muted">One version</span>'}</div>`;
                   }).join('')}
                 </div>
               </div>
@@ -178,11 +187,15 @@ class Lobby {
       setMeta(code, { cpus: Math.max(0, Math.min(ONLINE.maxSeats - this.humans().length, cur + Number(b.dataset.cpu))) });
     }));
     outlet.querySelectorAll('[data-ver]').forEach((sel) => sel.addEventListener('change', () => setMeta(code, { [`versions/${sel.dataset.ver}`]: sel.value })));
+    outlet.querySelectorAll('[data-pool]').forEach((cb) => cb.addEventListener('change', () => setMeta(code, { [`off/${cb.dataset.pool}`]: !cb.checked })));
+    outlet.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => setMeta(code, { mode: b.dataset.mode })));
     this.$('[data-ready]').addEventListener('click', () => {
       const m = this.room?.members?.[me.uid];
       if (m?.char) setReady(code, me.uid, !m.ready);
     });
     this.$('[data-start]').addEventListener('click', async (e) => {
+      // only the host, and only once everyone has a seat and is Ready
+      if (this.room?.meta?.host !== me.uid || !this.allReady() || e.target.disabled) return;
       e.target.disabled = true;
       const { now, D, ref } = await rtdb();
       const run = buildRun(this.room, now());
@@ -223,11 +236,15 @@ class Lobby {
     const humans = this.humans().length;
     const cpus = Math.min(r.meta?.cpus || 0, ONLINE.maxSeats - humans);
     this.$('[data-hostonly]').classList.toggle('readonly', !isHost);
-    this.$('[data-hostonly]').querySelectorAll('button, select').forEach((x) => { x.disabled = !isHost; });
+    this.$('[data-hostonly]').querySelectorAll('button, select, input').forEach((x) => { x.disabled = !isHost; });
     this.$('[data-cpucount]').textContent = cpus;
     document.querySelectorAll('[data-ver]').forEach((sel) => { const v = r.meta?.versions?.[sel.dataset.ver] || 'random'; if (sel.value !== v) sel.value = v; });
+    document.querySelectorAll('[data-pool]').forEach((cb) => { cb.checked = !r.meta?.off?.[cb.dataset.pool]; });
+    const mode = r.meta?.mode || 'elimination';
+    document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+    this.$('[data-modeinfo]').textContent = MODE_INFO[mode] || '';
     const total = humans + cpus;
-    this.$('[data-summary]').textContent = `${total} at the table: ${humans} player${humans === 1 ? '' : 's'}${cpus ? ` + ${cpus} computer${cpus === 1 ? '' : 's'}` : ''}.${humans >= ONLINE.minRealForBoards ? ' Counts for online leaderboards.' : ` Online leaderboards need ${ONLINE.minRealForBoards}+ players.`}`;
+    this.$('[data-summary]').textContent = `${total} at the table: ${humans} player${humans === 1 ? '' : 's'}${cpus ? ` + ${cpus} computer${cpus === 1 ? '' : 's'}` : ''}.${{ online: ' Counts for the online leaderboards.', offline: ' More computers than players: counts for the computer (offline) leaderboards.' }[boardsFor(humans, total)] || ' Leaderboards need 3+ at the table.'}`;
     const start = this.$('[data-start]');
     const ready = this.$('[data-ready]');
     const meReady = !!r.members?.[this.me.uid]?.ready;
@@ -281,6 +298,7 @@ class RunView {
   myId(run) { return Object.values(run.players || {}).find((p) => p.uid === this.me.uid && !p.left)?.id || null; }
 
   async update(room) {
+    this.room = room;
     await this.ready;
     if (!this.table) return;
     const run = room.run;
@@ -294,19 +312,24 @@ class RunView {
       this.gone = new Set();
     }
     // anyone out stands up and walks away (also covers joining late and "skip to results")
-    for (const p of Object.values(P)) if (!p.alive && !this.gone.has(p.id)) { this.gone.add(p.id); this.table.eliminate(p.id); }
+    for (const p of Object.values(P)) {
+      if (p.alive || this.gone.has(p.id)) continue;
+      this.gone.add(p.id);
+      const s = run.step || {};
+      this.table.eliminate(p.id, { yank: s.kind === 'out' && s.who === p.id && !!s.yank });
+    }
     this.$('[data-round]').textContent = run.label?.round || '';
     this.$('[data-game]').textContent = run.label?.game || '';
     this.$('[data-variant]').textContent = run.label?.variant || '';
     this.$('[data-msg]').textContent = run.msg || '';
     const status = run.statusText || {};
     this.$('[data-players]').innerHTML = Object.values(P).sort((a, b) => a.seat - b.seat).map((p) => {
-      const st = !p.alive ? 'OUT' : (status[p.id] ?? '');
+      const st = !p.alive ? 'OUT' : (status[p.id] ?? (run.mode === 'points' ? `${run.points?.[p.id] || 0} pts` : ''));
       const cls = [!p.alive ? 'out' : '', p.id === run.current ? 'current' : '', p.id === myId ? 'you' : ''].join(' ');
       const who = p.cpu ? (p.left ? 'computer (left)' : 'computer') : escapeHtml(p.username);
       return `<li class="${cls}" style="--seat:${hex(p.shirt)}"><span class="dot"></span><span class="pname">${escapeHtml(p.name)} <em>${p.id === myId ? 'you' : who}</em></span><span class="pstat">${escapeHtml(st)}</span></li>`;
     }).join('');
-    for (const p of Object.values(P)) this.table.setStatus(p.id, !p.alive ? 'OUT' : (status[p.id] ?? ''), p.id === run.current);
+    for (const p of Object.values(P)) this.table.setStatus(p.id, !p.alive ? 'OUT' : (status[p.id] ?? (run.mode === 'points' ? `${run.points?.[p.id] || 0} pts` : '')), p.id === run.current);
 
     const s = run.step;
     this.handleStep(room, run, s, myId);
@@ -345,8 +368,13 @@ class RunView {
         }
         return;
       }
-      actions.innerHTML = '';
+      if (!actions.querySelector('[data-rewatch]')) actions.innerHTML = '';
       if (!done && P[cur] && !P[cur].cpu && !this.watching && this.declined !== key) this.watch(run, s, key);
+      // went back to the table? you can always go back to watching
+      if (!done && P[cur] && !P[cur].cpu && this.declined === key && !this.watching && !actions.querySelector("[data-rewatch]")) {
+        actions.innerHTML = `<button class="btn btn-primary" data-rewatch>Watch ${escapeHtml(P[cur].name)} live</button>`;
+        actions.querySelector('[data-rewatch]').addEventListener('click', () => { this.declined = null; actions.innerHTML = ''; this.watch(run, s, key); }, { once: true });
+      }
       return;
     }
     if (s.kind === 'race') {
@@ -421,22 +449,40 @@ class RunView {
       await new Promise((r) => setTimeout(r, wait));
     }
     const P = run.players;
-    const racers = s.pool.filter((id) => id !== this.myId(run)).map((id) => ({ id, name: P[id].name, at: s.cpuTimes?.[id] ?? 1e9 }));
+    const racers = s.pool.filter((id) => id !== this.myId(run)).map((id) => ({ id, name: P[id].name, at: s.cpuTimes?.[id] ?? 1e9, wrongs: s.cpuWrongs?.[id] || [] }));
     // other real players: when one of them solves, their time is filled in and the board ends
     const off = D.onValue(ref(`rooms/${this.code}/race/${s.raceKey}`), (snap) => {
       for (const [uid, rep] of Object.entries(snap.val() || {})) {
         const p = Object.values(P).find((x) => x.uid === uid);
         const r = p && racers.find((x) => x.id === p.id);
-        if (r && rep.solved) r.at = rep.t;
+        if (r && rep.solved) r.at = 0; // someone else got it: end your board right away
       }
     });
+    // other real players' wrong guesses: show their 5 s wait
+    const seenWrong = {};
+    const offWrong = D.onValue(ref(`rooms/${this.code}/racewrong/${s.raceKey}`), (snap) => {
+      for (const [uid, n] of Object.entries(snap.val() || {})) {
+        if (uid === this.me.uid || seenWrong[uid] === n) continue;
+        seenWrong[uid] = n;
+        const p = Object.values(P).find((x) => x.uid === uid);
+        const r = p && racers.find((x) => x.id === p.id);
+        if (r) r.lockUntilMs = performance.now() + 5000;
+      }
+    });
+    // safety: if the referee has already moved past this board (it decided without us), end it now
+    const offStep = D.onValue(ref(`rooms/${this.code}/run/step`), (snap) => {
+      if (snap.val()?.raceKey !== s.raceKey) for (const r of racers) r.at = 0;
+    });
+    let myWrongs = 0;
     this.table.pause();
     const { playTurn } = await import('../competition/playTurn.js');
     const result = await playTurn(document.body, {
       gameId: s.game, variant: s.variant, seed: s.seed, online: true,
-      extra: { compete: { racers } }, banner: `Race · board ${s.board}`,
+      extra: { compete: { racers, onWrong: () => D.set(ref(`rooms/${this.code}/racewrong/${s.raceKey}/${this.me.uid}`), ++myWrongs).catch(() => {}) } }, banner: `Race · board ${s.board}`,
     });
     off();
+    offWrong();
+    offStep();
     this.table.resume();
     this.submitted.add(s.raceKey);
     this.playing = null;
@@ -463,11 +509,15 @@ class RunView {
       try { saved = !!sessionStorage.getItem(key); sessionStorage.setItem(key, '1'); } catch { /* ignore */ }
       if (!saved && !me.left && !DEBUG) { // debug test runs aren't saved
         const won = me.place === 1;
+        const pts = run.mode === 'points';
         scores.submit({
-          gameId: 'competition', variant: `${total}p`, score: total - me.place, maxScore: total - 1, passed: won,
+          gameId: 'competition', variant: pts ? `${total}p-points` : `${total}p`,
+          score: pts ? (run.points?.[myId] || 0) : total - me.place, maxScore: pts ? 15 : total - 1, passed: won,
           durationMs: 0, stats: { place: me.place, players: total, online: true, real: run.realCount, performance: perf }, seed: run.seed,
         });
-        if (run.realCount >= ONLINE.minRealForBoards) recordOnlineRun({ won, roundWins: topRounds, performance: perf });
+        const kind = boardsFor(run.realCount, total);
+        if (kind === 'online') recordOnlineRun({ won, roundWins: topRounds, performance: perf });
+        else if (kind === 'offline') recordBotMajorityRun({ won, roundWins: topRounds });
       }
     }
     const overlay = this.$('.overlay');
@@ -475,14 +525,28 @@ class RunView {
     const order = Object.values(P).sort((a, b) => (a.place || 99) - (b.place || 99));
     overlay.innerHTML = `
       <div class="board panel">
-        <p class="kicker">Online · ${total} players · room ${this.code}</p>
+        <p class="kicker">Online · ${total} players${run.mode === 'points' ? ' · Points' : ''} · room ${this.code}</p>
         <h2 class="verdict ${me?.place === 1 ? 'pass' : 'fail'}">${me?.place === 1 ? 'You are the Last to Leave!' : `${escapeHtml(winner?.name || '')}${winner && !winner.cpu ? ` (${escapeHtml(winner.username)})` : ''} won it.`}</h2>
         ${me ? `<div class="big-score">${ordinal(me.place)}<small> / ${total}</small></div>
-          <p class="muted">Performance <strong>${perf.toFixed(1)}</strong> / 100 · top score in ${topRounds} round${topRounds === 1 ? '' : 's'}${run.realCount >= ONLINE.minRealForBoards ? '' : ' · leaderboards need 3+ players'}</p>` : '<p class="muted">You watched this one.</p>'}
-        <ol class="final-order">${order.map((p) => `<li${p.id === myId ? ' class="you"' : ''}>${escapeHtml(p.name)} <span class="muted">${p.uid ? escapeHtml(p.username) : 'computer'}</span>${p.uid ? `<span class="perf" title="Performance">${runPerformance(run, p.id).toFixed(1)}</span>` : ''}</li>`).join('')}</ol>
+          <p class="muted">Performance <strong>${perf.toFixed(1)}</strong> / 100 · top score in ${topRounds} round${topRounds === 1 ? '' : 's'}${{ online: ' · online leaderboards', offline: ' · counts as a computer game' }[boardsFor(run.realCount, total)] || ' · leaderboards need 3+ at the table'}</p>` : '<p class="muted">You watched this one.</p>'}
+        <ol class="final-order">${order.map((p) => `<li${p.id === myId ? ' class="you"' : ''}>${escapeHtml(p.name)} <span class="muted">${p.uid ? escapeHtml(p.username) : 'computer'}</span>${run.mode === 'points' ? `<span class="perf">${run.points?.[p.id] || 0} pts</span>` : ''}${p.uid ? `<span class="perf" title="Performance">${runPerformance(run, p.id).toFixed(1)}</span>` : ''}</li>`).join('')}</ol>
         <p class="muted small-note">Numbers are each player's performance out of 100: how well they played each round against the table and for the game, plus where they finished.</p>
-        <div class="btn-row"><a class="btn btn-primary" href="#/online">New room</a><a class="btn" href="#/leaderboards">Leaderboards</a><a class="btn" href="#/">Menu</a></div>
+        <div class="btn-row">
+          ${this.isHost() ? '<button class="btn btn-primary" data-relobby>Back to lobby (same code)</button>' : '<span class="muted">The host can take everyone back to the lobby.</span>'}
+          <a class="btn" href="#/online">New room</a><a class="btn" href="#/leaderboards">Leaderboards</a><a class="btn" href="#/">Menu</a>
+        </div>
       </div>`;
+    overlay.querySelector('[data-relobby]')?.addEventListener('click', (e) => { e.target.disabled = true; this.backToLobby(); });
+  }
+
+  isHost() { return this.room?.meta?.host === this.me.uid; }
+
+  /** Host: everyone back to the lobby with the same code (seats kept, everyone re-readies). */
+  async backToLobby() {
+    const { D, ref } = await rtdb();
+    await D.update(ref(`rooms/${this.code}`), {
+      'meta/status': 'lobby', run: null, results: null, race: null, racewrong: null, live: null, requests: null,
+    });
   }
 
   destroy() {

@@ -9,11 +9,11 @@ export const CONFIG = {
   raceLockoutSec: 5,       // Competition/online (no clock): wait this long after a wrong guess
   raceNewBoardSec: 30,
 
-  // Pictionary Streak (endless): drawings keep coming. A drawing you don't get
-  // (time runs out or you pass) is a strike; 3 strikes ends it. The time after
+  // Pictionary Rush (endless): drawings keep coming. Miss one (time runs out or
+  // you pass) and it's over, like Equations Rush. The time after
   // the sketch finishes shrinks a little with every one you get.
-  streak: {
-    strikes: 3,
+  rush: {
+    strikes: 1,
     passScore: 6,
     shrinkPerGuess: 0.25,  // seconds off the after-sketch time per drawing guessed...
     minAfterDrawSec: [2, 4], // ...down to this

@@ -18,7 +18,8 @@ export default {
   ],
   options: [
     { id: 'bullet', label: 'Bullet', desc: 'Much faster throws, a bit tighter and more predictable than normal.' },
-    { id: 'endless', label: 'Endless', desc: `Markers keep coming and speed up. ${CONFIG.endless.strikes} misses and you're out.` },
+    { id: 'endless', label: 'Endless', desc: `Markers keep coming and speed up. ${CONFIG.endless.strikes} misses and you're out.`, excludes: ['memory'] },
+    { id: 'memory', label: 'Memory', desc: `Paul shows you 4 colors first: two worth +${CONFIG.memory.bonusPoints}, two worth ${CONFIG.memory.penaltyPoints}. Then remember them. Score ${CONFIG.memory.passScore}+ points. (Not with Endless.)`, excludes: ['endless'] },
   ],
   variants: GAMES.find((g) => g.id === 'marker-catching').variants,
   statLabels: [
@@ -29,7 +30,7 @@ export default {
     ['whiffs', 'Whiffs'],
   ],
   variant(opts) {
-    return ['bullet', 'endless'].filter((k) => opts[k]).join('-') || 'regular';
+    return [opts.bullet && 'bullet', opts.endless && 'endless', !opts.endless && opts.memory && 'memory'].filter(Boolean).join('-') || 'regular';
   },
   create: createMarkerCatching,
 };

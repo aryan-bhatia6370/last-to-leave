@@ -8,10 +8,12 @@
 
 import { rtdb } from './net.js';
 import {
-  CHARACTERS, chooseGame, chooseVariant, competitionGames, isRaceGame,
-  simulateScore, simulateSolveTime, randomSkill, lowestScorers, maxScoreFor,
+  CHARACTERS, YANK_CHANCE, chooseRound, poolFrom, competitionGames, isRaceGame,
+  simulateScore, simulateSolveTime, simulateWrongTimes, randomSkill, lowestScorers, maxScoreFor,
 } from '../competition/engine.js';
 import { createRng, newSeed } from '../core/rng.js';
+
+export const POINTS = { rounds: 5, award: [3, 2, 1] };
 
 export const REF = {
   introMs: 2500,
@@ -21,7 +23,7 @@ export const REF = {
   tieMs: 2800,
   outMs: 5200,
   raceLeadMs: 3500,     // time to get ready before a race board goes up
-  raceGraceSec: 4,      // wait this long past the earliest known solve for late reports
+  raceGraceSec: 2,      // wait this long past the earliest known solve for late reports
   raceMaxSec: 75,
   nextBoardMs: 2600,
   awayMs: 60000,        // disconnected this long -> a computer takes the seat
@@ -50,6 +52,9 @@ export function buildRun(room, now) {
   const total = Object.keys(players).length;
   return {
     seed: newSeed(), total, realCount: humans.length, players, round: 0,
+    mode: room.meta?.mode === 'points' ? 'points' : 'elimination',
+    points: Object.fromEntries(Object.keys(players).map((id) => [id, 0])),
+    firsts: Object.fromEntries(Object.keys(players).map((id) => [id, 0])),
     label: { round: 'Welcome to the table', game: 'Last to Leave', variant: `${total} players` },
     msg: 'Paul is getting the first game ready…',
     step: { id: 1, kind: 'intro', until: now + REF.introMs },
@@ -113,6 +118,9 @@ export function startReferee(code, getRoom) {
 
     // 3) the current step
     switch (s.kind) {
+      case 'pointsAfter':
+        if (now < s.until) return;
+        return (run.round || 0) >= POINTS.rounds ? finishPoints() : startRound();
       case 'intro':
       case 'out':
         if (now < s.until) return;
@@ -139,18 +147,22 @@ export function startReferee(code, getRoom) {
       const round = run.round || 0;
       const rng = createRng((run.seed + round * 7919) >>> 0);
       const history = run.history || [];
-      const game = chooseGame(round, ids.length, history, rng);
-      const variant = chooseVariant(game, room.meta?.versions || {}, rng);
+      const pointsMode = run.mode === 'points';
+      const { game, variant } = chooseRound(round, pointsMode ? 99 : ids.length, history, room.meta?.versions || {}, rng, {
+        allowed: poolFrom(room.meta?.off),
+        canUse: pointsMode ? (id) => id !== 'sausage' || round >= POINTS.rounds - 2 : null, // Points: Sausage only in the last 2 rounds
+        pointsMode,
+      });
       const vLabel = game.variants.find((v) => v.id === variant)?.label ?? 'Regular';
-      const isFinal = ids.length === 2;
+      const isFinal = !pointsMode && ids.length === 2;
       return write({
         ...next({ kind: 'announce', game: game.id, variant, contenders: ids, race: isRaceGame(game.id), until: now + T(REF.announceMs) }),
         'run/round': round + 1,
-        'run/history': [...history, game.id],
+        'run/history': [...history, `${game.id}:${variant}`],
         [`run/rounds/${round}`]: { kind: isRaceGame(game.id) ? 'race' : 'scored', game: game.id, variant, players: ids },
         'run/statusText': null,
         'run/current': null,
-        'run/label': { round: isFinal ? 'FINAL' : `Round ${round + 1}`, game: game.name, variant: vLabel === 'Regular' ? 'Normal' : vLabel },
+        'run/label': { round: isFinal ? 'FINAL' : pointsMode ? `Round ${round + 1} of ${POINTS.rounds}` : `Round ${round + 1}`, game: game.name, variant: vLabel === 'Regular' ? 'Normal' : vLabel },
         'run/msg': isFinal ? `It's down to ${name(ids[0])} and ${name(ids[1])}.` : `Paul picks… ${game.name}${vLabel !== 'Regular' ? ` (${vLabel})` : ''}!`,
       });
     }
@@ -206,6 +218,10 @@ export function startReferee(code, getRoom) {
     function endTurns(res) {
       const patch = {};
       if (!s.replay) patch[`run/rounds/${r}/scores`] = res;
+      if (run.mode === 'points') {
+        const sorted = Object.entries(res).sort((a, b) => b[1] - a[1]);
+        return awardPoints(sorted.map(([id, sc]) => [id, 1 + sorted.filter(([, o]) => o > sc).length]), patch);
+      }
       const low = lowestScorers(res);
       if (low.length === 1) return write({ ...patch, ...outPatch(low[0]) });
       const list = low.map(name);
@@ -222,9 +238,10 @@ export function startReferee(code, getRoom) {
     function startRace(pool, board) {
       const rng = createRng(newSeed());
       const cpuTimes = {};
-      for (const id of pool) if (P[id].cpu) cpuTimes[id] = simulateSolveTime(s.game, P[id].skill || 1, rng);
+      const cpuWrongs = {};
+      for (const id of pool) if (P[id].cpu) { cpuTimes[id] = simulateSolveTime(s.game, P[id].skill || 1, rng); const w = simulateWrongTimes(cpuTimes[id], rng); if (w.length) cpuWrongs[id] = w; }
       const patch = {
-        ...next({ kind: 'race', game: s.game, variant: s.variant, pool, board, raceKey: `r${r}b${board}`, seed: newSeed(), startAt: now + T(REF.raceLeadMs), cpuTimes }),
+        ...next({ kind: 'race', game: s.game, variant: s.variant, pool, board, raceKey: `r${r}b${board}`, seed: newSeed(), startAt: now + T(REF.raceLeadMs), cpuTimes, cpuWrongs }),
         'run/current': null,
         'run/msg': `Board ${board}: first to get it is safe. ${pool.length} still racing.`,
       };
@@ -258,13 +275,62 @@ export function startReferee(code, getRoom) {
       if (s.board === 1) patch[`run/rounds/${r}/first`] = winner;
       patch[`run/rounds/${r}/safe/b${s.board}`] = winner; // order players got safe (performance score)
       const rest = s.pool.filter((id) => id !== winner);
-      if (rest.length > 1) return write({ ...patch, ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: rest, board: s.board + 1, until: now + T(REF.nextBoardMs) }) });
+      const safeSoFar = Object.keys(run.rounds?.[r]?.safe || {}).filter((k) => k !== `b${s.board}`).length + 1;
+      const pointsDone = run.mode === 'points' && safeSoFar >= POINTS.award.length; // only the top 3 score
+      if (rest.length > 1 && !pointsDone) return write({ ...patch, ...next({ kind: 'raceNext', game: s.game, variant: s.variant, pool: rest, board: s.board + 1, until: now + T(REF.nextBoardMs) }) });
+      if (run.mode === 'points') {
+        // ranking = the order everyone got safe (board 1 first), the last one ranks last
+        const safe = Object.entries(run.rounds?.[r]?.safe || {}).map(([k, id]) => [Number(k.slice(1)), id]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
+        const order = [...safe.filter((id) => id !== winner), winner];
+        const ranking = order.map((id, i) => [id, i + 1]);
+        for (const id of rest) ranking.push([id, order.length + 1]); // everyone still racing shares the next place
+        return awardPoints(ranking, patch);
+      }
       return write({ ...patch, ...outPatch(rest[0]) });
+    }
+
+    // Points mode: 1st = 3, 2nd = 2, 3rd = 1 (ties share the rank); nobody leaves
+    function awardPoints(ranking, patch = {}) {
+      const pts = { ...(run.points || {}) };
+      const firsts = { ...(run.firsts || {}) };
+      for (const [id, rank] of ranking) {
+        const add = POINTS.award[rank - 1] || 0;
+        pts[id] = (pts[id] || 0) + add;
+        if (rank === 1) firsts[id] = (firsts[id] || 0) + 1;
+        patch[`run/statusText/${id}`] = add ? `+${add} · ${pts[id]} pts` : `${pts[id]} pts`;
+      }
+      const leader = Object.keys(pts).sort((a, b) => pts[b] - pts[a])[0];
+      return write({
+        ...patch,
+        'run/points': pts,
+        'run/firsts': firsts,
+        'run/current': null,
+        ...next({ kind: 'pointsAfter', until: now + T(2600) }),
+        'run/msg': `After round ${run.round}: ${name(leader)} leads with ${pts[leader]}.`,
+      });
+    }
+
+    function finishPoints() {
+      const pts = run.points || {}, firsts = run.firsts || {};
+      const rng = createRng((run.seed ^ 0x7777) >>> 0);
+      const tiebreak = Object.fromEntries(Object.keys(P).map((id) => [id, rng.next()]));
+      const order = Object.keys(P).sort((a, b) => ((pts[b] || 0) - (pts[a] || 0)) || ((firsts[b] || 0) - (firsts[a] || 0)) || (tiebreak[a] - tiebreak[b]));
+      const patch = {};
+      order.forEach((id, i) => { patch[`run/players/${id}/place`] = i + 1; });
+      const w = order[0];
+      return write({
+        ...patch,
+        ...next({ kind: 'done', winner: w }),
+        [`run/statusText/${w}`]: `WINNER · ${pts[w] || 0} pts`,
+        'run/label': { round: 'Last to Leave', game: name(w), variant: `wins on points (${pts[w] || 0})` },
+        'run/msg': `${name(w)} wins with ${pts[w] || 0} points!`,
+        'meta/status': 'done',
+      });
     }
 
     function outPatch(id) {
       return {
-        ...next({ kind: 'out', who: id, until: now + T(REF.outMs) }),
+        ...next({ kind: 'out', who: id, yank: !!P[id].cpu && Math.random() < YANK_CHANCE, until: now + T(REF.outMs) }),
         [`run/players/${id}/alive`]: false,
         [`run/players/${id}/place`]: alive().length,
         [`run/statusText/${id}`]: 'OUT',
@@ -281,9 +347,8 @@ export function startReferee(code, getRoom) {
       const history = (run.history || []).slice();
       const patch = {};
       while (ids.length > 1) {
-        const game = chooseGame(round, ids.length, history, rng);
-        history.push(game.id);
-        const variant = chooseVariant(game, room.meta?.versions || {}, rng);
+        const { game, variant } = chooseRound(round, ids.length, history, room.meta?.versions || {}, rng, { allowed: poolFrom(room.meta?.off) });
+        history.push(`${game.id}:${variant}`);
         let loser;
         if (isRaceGame(game.id)) {
           loser = ids.map((id) => [id, simulateSolveTime(game.id, P[id].skill || 1, rng)]).sort((a, b) => b[1] - a[1])[0][0];

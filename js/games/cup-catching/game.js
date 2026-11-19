@@ -65,7 +65,7 @@ export function createCupCatching(container, host) {
     shot: null,
     inCup: [], // { color, a, lean, off, anim, from }
     debris: [], // spilled markers falling away
-    cup: { rim: [0, C.hold.rimY, C.hold.startZ], vel: [0, 0], axis: [0, 1, 0], wobble: 0 }, // vel = [x, z] m/s
+    cup: { rim: [0, -0.3, C.cupDepth], vel: [0, 0], axis: [0, 1, 0], wobble: 0 }, // vel = [x, y] m/s
     pointer: null,
     spilledOver: false,
     finished: false,
@@ -93,7 +93,7 @@ export function createCupCatching(container, host) {
 
   function onResize(size) {
     cam = createCamera(size, { fovYDeg: W.fovYDeg, cyFrac: 0.42 });
-    if (!st.pointer) st.cup.rim = [0, C.hold.rimY, C.hold.startZ];
+    if (!st.pointer) st.cup.rim = cam.unproject(cam.W / 2, cam.H * 0.72, C.cupDepth);
   }
 
   function setPhase(phase, durSec = 0) {
@@ -106,14 +106,14 @@ export function createCupCatching(container, host) {
   const styleHand = (style, key) => Thrower.styleHand(st.thrower, style, key);
 
   // ---------- the cup ----------
-  /** The point on the hand-height plane under a screen point, kept inside your reach. */
+  function cupLimits() {
+    const m = Math.max(40, Math.min(cam.W, cam.H) * 0.08);
+    return { x0: m, x1: cam.W - m, y0: cam.H * 0.28, y1: cam.H - m * 0.9 };
+  }
+  /** Where the cup goes for a screen point: same distance from you, left/right + up/down. */
   function cupPointAt(sx, sy) {
-    const Y = C.hold.rimY;
-    const [z0, z1] = C.hold.reachZ;
-    const below = sy - cam.cy; // pixels below the horizon
-    const z = clamp(below > 0 ? (-Y * cam.f) / below : z1, z0, z1);
-    const halfW = cam.halfWidthAt(z) * 0.85;
-    return [clamp(((sx - cam.cx) * z) / cam.f, -halfW, halfW), Y, z];
+    const L = cupLimits();
+    return cam.unproject(clamp(sx, L.x0, L.x1), clamp(sy, L.y0, L.y1), C.cupDepth);
   }
 
   function updateCup(dt) {
@@ -123,7 +123,7 @@ export function createCupCatching(container, host) {
       const target = cupPointAt(st.pointer.x, st.pointer.y - off);
       const k = 1 - Math.exp(-C.follow.smoothing * dt);
       const next = lerp3(c.rim, target, k);
-      const v = [(next[0] - c.rim[0]) / dt, (next[2] - c.rim[2]) / dt];
+      const v = [(next[0] - c.rim[0]) / dt, (next[1] - c.rim[1]) / dt];
       c.vel = [lerp(c.vel[0], v[0], 0.5), lerp(c.vel[1], v[1], 0.5)];
       c.rim = next;
     } else {
@@ -225,11 +225,14 @@ export function createCupCatching(container, host) {
     setPhase('gap', rng.range(P.gapMs) / 1000 / st.speed);
   }
 
-  /** Where the throw is aimed: the ideal spot for the cup's rim, somewhere inside your reach. */
+  /** Where the throw is aimed: the ideal spot for the cup's rim, at the cup's distance. */
   function targetPoint(u, v) {
-    const z = lerp(P.targetZ[0], P.targetZ[1], (v + 1) / 2);
-    const x = u * P.targetSpreadX * cam.halfWidthAt(z) * 0.85;
-    return [x, C.hold.rimY, z];
+    const L = cupLimits();
+    const cx = (L.x0 + L.x1) / 2;
+    const cy = lerp(L.y0, L.y1, 0.55);
+    const sx = cx + u * P.targetSpreadX * (L.x1 - L.x0) / 2;
+    const sy = cy + v * P.targetSpreadY * (L.y1 - L.y0) / 2;
+    return cam.unproject(sx, sy, C.cupDepth);
   }
 
   function release() {
@@ -485,7 +488,32 @@ export function createCupCatching(container, host) {
     }
   }
 
+  // A soft ring where the marker is about to come down (only roughly: "the general area").
+  function drawLandingHint() {
+    const s = st.shot;
+    if (!s || s.state !== 'flying' || !s.target) return;
+    const left = s.T - s.t;
+    const k = clamp(1 - left / C.hint.showSec, 0, 1);
+    if (k <= 0) return;
+    if (!s.hintOff) s.hintOff = [luck.range(-1, 1) * C.hint.wobble, luck.range(-1, 1) * C.hint.wobble];
+    const c = cam.project([s.target[0] + s.hintOff[0], s.target[1] + s.hintOff[1], s.target[2]]);
+    const r = c.s * C.hint.radius;
+    ctx.save();
+    ctx.globalAlpha = 0.55 * easeOut(k);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([7, 6]);
+    ctx.beginPath();
+    ctx.ellipse(c.x, c.y, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.18 * easeOut(k);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawHUD() {
+    drawLandingHint();
     const pad = Math.max(14, Math.min(cam.W, cam.H) * 0.025);
     const big = Math.round(clamp(cam.H * 0.065, 30, 56));
     const small = Math.round(big * 0.42);

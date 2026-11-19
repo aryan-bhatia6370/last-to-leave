@@ -28,20 +28,23 @@ export const LEADERBOARD = {
 };
 
 export const CATEGORIES = [
-  { id: 'endless', label: 'Endless', boards: ['endless-catch', 'endless-bullet', 'endless-cup', 'endless-rush', 'endless-streak'] },
-  { id: 'fastest', label: 'Fastest', boards: ['fast-equations', 'fast-pictionary'] },
+  { id: 'endless', label: 'Endless', boards: ['endless-catch', 'endless-bullet', 'endless-cup', 'endless-rush', 'endless-streak', 'endless-trivia'] },
+  { id: 'fastest', label: 'Fastest', boards: ['fast-equations', 'fast-pictionary', 'fast-trivia'] },
   { id: 'competition', label: 'Competition', boards: ['comp-wins', 'comp-wins-offline', 'comp-wins-online', 'comp-performance'] },
   { id: 'minigame', label: 'Minigames', boards: ['mini-wins', 'mini-wins-offline', 'mini-wins-online'] },
 ];
 
 export const BOARDS = {
-  'endless-catch': { v: 2, label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
-  'endless-bullet': { v: 2, label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
-  'endless-cup': { v: 3, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
+  'endless-catch': { v: 3, label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
+  'endless-bullet': { v: 3, label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
+  'endless-cup': { v: 4, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
   'endless-rush': { label: 'Equations Rush', note: 'Most problems solved in one run', type: 'best', game: 'equations', variant: 'rush', unit: 'solved' },
-  'endless-streak': { label: 'Pictionary Streak', note: 'Most drawings guessed before 3 strikes', type: 'best', game: 'pictionary', variant: 'streak', unit: 'guessed' },
+  // (id kept as 'endless-streak' internally; v2 = the Rush rules: one miss ends it)
+  'endless-streak': { v: 2, label: 'Pictionary Rush', note: 'Most drawings guessed in a row (one miss ends it)', type: 'best', game: 'pictionary', variant: 'rush', unit: 'guessed' },
+  'endless-trivia': { label: 'Trivia Rush', note: 'Most questions answered in one run (one miss ends it)', type: 'best', game: 'trivia', variant: 'rush', unit: 'answered' },
   'fast-equations': { label: 'Fastest Equations', note: 'Best average time in a game where you solved all 3', type: 'fastest', game: 'equations', scale: 10, decimals: 1, suffix: 's' },
   'fast-pictionary': { label: 'Fastest Pictionary', note: 'Best average time in a game where you guessed all 3 (built-in drawings)', type: 'fastest', game: 'pictionary', scale: 10, decimals: 1, suffix: 's' },
+  'fast-trivia': { label: 'Fastest Trivia', note: 'Best average time in a game where you answered all 3', type: 'fastest', game: 'trivia', scale: 10, decimals: 1, suffix: 's' },
   'comp-wins': { label: 'Total wins', note: 'Offline + online', type: 'count', unit: 'wins' },
   'comp-wins-offline': { label: 'Offline wins', note: '3+ players at the table (you + 2 computers or more)', type: 'count', unit: 'wins' },
   'comp-wins-online': { label: 'Online wins', note: 'Online rooms with 3+ real players', type: 'count', unit: 'wins' },
@@ -105,6 +108,12 @@ export function recordCompetitionRoundWin(tableSize) {
  * End of an online run with 3+ real players (the caller checks that):
  * a win, the rounds where you had the top score, and your performance (/100, one decimal).
  */
+/** An online game with more computers than real players counts like offline Competition. */
+export async function recordBotMajorityRun({ won, roundWins }) {
+  if (won) await addWin(['comp-wins', 'comp-wins-offline']).catch(warn('bot-majority win'));
+  for (let i = 0; i < roundWins; i++) await addWin(['mini-wins', 'mini-wins-offline']).catch(warn('bot-majority round win'));
+}
+
 export async function recordOnlineRun({ won, roundWins, performance }) {
   if (won) await addWin(['comp-wins', 'comp-wins-online']).catch(warn('online win'));
   for (let i = 0; i < roundWins; i++) await addWin(['mini-wins', 'mini-wins-online']).catch(warn('online round win'));

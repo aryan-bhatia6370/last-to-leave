@@ -6,6 +6,23 @@ import { escapeHtml } from './env.js';
 
 export const CHANGELOG = [
   {
+    id: '2026-11-19c',
+    title: 'Two new games, Points mode & the crew',
+    items: [
+      '<strong>Trivia</strong>: Paul flips a board with a question on it, like Equations. 3 rounds or <strong>Trivia Rush</strong> (one miss ends it).',
+      '<strong>The Sausage Game</strong>: a whiteboard lies flat on the table. Drag back on the ink refill and flick it into the point zones (−2 to +5). 3 flicks, too hard = off the board.',
+      '<strong>Memory</strong> mode for Marker Catching: Paul shows 4 markers first. Two are +2, two are −1. Remember which.',
+      'Competition: new <strong>Points</strong> mode (5 rounds, 3/2/1 points, nobody leaves). The host can take games and versions out of the pool, and no version repeats in a run.',
+      'Paul walks over to whoever’s turn it is and leads players out when they lose. Some computers don’t go quietly.',
+      'The Members got their own looks.',
+      'Online: wrong guesses in races show a lockout timer for everyone, correct answers show up faster, and the host can take everyone back to the lobby with the same code. Rooms with more computers than people count toward the offline leaderboards.',
+      'Pictionary: 182 prompts (lots of weird ones), Paul draws standing beside the board, and <strong>Streak</strong> is now <strong>Pictionary Rush</strong> (one miss ends it).',
+      'Cup Catching is back to left/right and up/down, with a hint ring just before each marker lands. Cup Throwing shows your last throw’s path and how far away the cup is.',
+      'Archery Hotspots are labeled ×2. Fixes for fullscreen flicker, phone layouts and spectating lag. Computers rebalanced.',
+      'New leaderboards: Trivia Rush and Fastest Trivia. Marker Catching, Pictionary, Cup Catching and Cup Throwing bests and their Endless/Rush boards were reset.',
+    ],
+  },
+  {
     id: '2026-11-19b',
     title: 'Cup Catching: no more spilling',
     items: [

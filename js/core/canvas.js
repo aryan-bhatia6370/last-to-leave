@@ -8,7 +8,7 @@ export function createCanvas(container, onResize) {
 
   function fit() {
     const r = container.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5, Math.sqrt(6e6 / Math.max(1, r.width * r.height)));
     const w = Math.max(1, Math.round(r.width));
     const h = Math.max(1, Math.round(r.height));
     if (w === size.w && h === size.h && dpr === size.dpr) return;

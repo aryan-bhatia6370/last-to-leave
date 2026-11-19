@@ -10,8 +10,8 @@ export default {
   passText: 'Still at the table!',
   failText: "You're leaving the table.",
   howTo: [
-    'You\'re holding a red solo cup at waist height. It <strong>follows your mouse or finger</strong>: up moves it out toward Paul, down brings it back toward you.',
-    'Paul lobs markers up high. Get the cup under them so they drop in through the top. Their shadows on the ground show where they\'re coming down.',
+    'You\'re holding a red solo cup out in front of you. It <strong>follows your mouse or finger</strong>, left/right and up/down.',
+    'Paul lobs markers up high. Get the cup under them so they drop in through the top. Right before one arrives, a <strong>soft ring</strong> shows roughly where it\'s coming down.',
     'Too high and they smack the side; off-center and they bounce off the rim.',
     `Have ${CONFIG.passScore}+ of the 8 in the cup at the end to survive.`,
   ],

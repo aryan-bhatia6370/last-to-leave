@@ -71,7 +71,7 @@ service cloud.firestore {
     function isFastest(board) { return boardKind(board).matches('^fast-.*'); }
     function validEntry(board, uid) {
       return isOwner(uid)
-        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})([.]v[0-9]+)?~(endless-catch|endless-bullet|endless-cup|endless-rush|endless-streak|fast-equations|fast-pictionary|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
+        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})([.]v[0-9]+)?~(endless-catch|endless-bullet|endless-cup|endless-rush|endless-streak|endless-trivia|fast-equations|fast-pictionary|fast-trivia|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
         && request.resource.data.keys().hasOnly(['uid', 'username', 'value', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.username == get(userPath(uid)).data.username

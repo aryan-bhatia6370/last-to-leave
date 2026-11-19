@@ -8,7 +8,7 @@ import { createRng } from '../../core/rng.js';
 import { createCanvas } from '../../core/canvas.js';
 import { startLoop } from '../../shared/gameLoop.js';
 import { createAnswerBar, createRoundClock } from '../../shared/answerBar.js';
-import { createPopups, drawLabel } from '../../shared/hud.js';
+import { createPopups, drawLabel, drawRacerLockouts } from '../../shared/hud.js';
 import { renderWall, boardRect, drawWhiteboard, drawClock, drawRounds } from '../../shared/boardScene.js';
 import { drawMarker } from '../../shared/marker.js';
 import { clamp } from '../../shared/vec3.js';
@@ -24,7 +24,7 @@ export function createPictionary(container, host) {
   // Competition Mode race: one board, computer players "solve" it at set times
   // ({ racers: [{ name, at (seconds) }] }); the first correct answer wins it.
   const compete = options.compete || null;
-  const streak = !!options.streak && !compete; // Pictionary Streak: endless, 3 strikes
+  const streak = !!options.rush && !compete; // Pictionary Rush: endless, one missed drawing ends it
   const ROUNDS = compete ? 1 : streak ? Infinity : C.rounds;
   const rng = createRng(seed);
   const mine = !!options.mine && !streak;
@@ -45,8 +45,8 @@ export function createPictionary(container, host) {
   const roundSecs = [];
   function afterDraw(guessed) {
     if (!streak) return C.afterDrawSec;
-    const cut = C.streak.shrinkPerGuess * guessed;
-    return C.afterDrawSec.map((v, i) => Math.max(C.streak.minAfterDrawSec[i], v - cut));
+    const cut = C.rush.shrinkPerGuess * guessed;
+    return C.afterDrawSec.map((v, i) => Math.max(C.rush.minAfterDrawSec[i], v - cut));
   }
   function ensureRound(i, guessed = 0) {
     if (rounds[i]) return;
@@ -131,6 +131,7 @@ export function createPictionary(container, host) {
     if (compete) {
       st.lockUntil = st.raceT + C.raceLockoutSec;
       bar.setEnabled(false);
+      compete.onWrong?.(); // let the other racers see it
       popups.add(`Nope! Wait ${C.raceLockoutSec}s`, size.w / 2, size.h * 0.22, BAD, 30);
       return;
     }
@@ -182,7 +183,7 @@ export function createPictionary(container, host) {
       case 'erase':
         if (k >= 1) {
           st.round++;
-          if (streak ? st.strikes >= C.streak.strikes : st.round >= ROUNDS) setPhase('done', 0.2);
+          if (streak ? st.strikes >= C.rush.strikes : st.round >= ROUNDS) setPhase('done', 0.2);
           else startRound();
         }
         break;
@@ -192,10 +193,10 @@ export function createPictionary(container, host) {
           const avg = st.guessTimes.length ? st.guessTimes.reduce((a, b) => a + b, 0) / st.guessTimes.length : null;
           onFinish?.({
             gameId: 'pictionary',
-            variant: streak ? 'streak' : mine ? 'mine' : 'regular',
+            variant: streak ? 'rush' : mine ? 'mine' : 'regular',
             score: st.guessed,
             maxScore: streak ? null : ROUNDS,
-            passed: st.guessed >= (streak ? C.streak.passScore : C.passScore),
+            passed: st.guessed >= (streak ? C.rush.passScore : C.passScore),
             durationMs: Math.round(st.activeSec * 1000),
             stats: {
               winner: st.raceWinner ?? null,
@@ -292,11 +293,12 @@ export function createPictionary(container, host) {
     bs.render();
     ctx.clearRect(0, 0, size.w, size.h);
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
+    if (compete) drawRacerLockouts(ctx, size, compete.racers, st.raceT, C.raceLockoutSec);
     else if (streak) {
-      drawLabel(ctx, 'STREAK · GUESSED', 16, 26, 15, '#5b5b66');
+      drawLabel(ctx, 'RUSH · GUESSED', 16, 26, 15, '#5b5b66');
       drawLabel(ctx, `${st.guessed}`, 16, 70, 44, '#1f1f22');
-      const n = C.streak.strikes;
-      for (let i = 0; i < n; i++) drawLabel(ctx, i < st.strikes ? '✗' : '○', 16 + i * 30, 104, 26, i < st.strikes ? BAD : '#9a9aa6');
+      const n = C.rush.strikes;
+      if (n > 1) for (let i = 0; i < n; i++) drawLabel(ctx, i < st.strikes ? '✗' : '○', 16 + i * 30, 104, 26, i < st.strikes ? BAD : '#9a9aa6');
     } else drawRounds(ctx, size, 'GUESSED', st.guessed, ROUNDS, st.results, st.round);
     if (!compete && st.clock && (st.phase === 'draw' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, st.clock.total, st.flash);
     if (compete && st.phase === 'draw' && st.lockUntil) drawLabel(ctx, `Wait ${Math.ceil(st.lockUntil - st.raceT)}…`, size.w / 2, size.h * 0.16, 30, BAD, 'center');

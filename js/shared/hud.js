@@ -152,3 +152,19 @@ export function drawGlassBar(ctx, x, y, w, h, radius = 0) {
   ctx.fillRect(x + radius, y, w - radius * 2, 1);
   ctx.restore();
 }
+
+/**
+ * Race games: who else is locked out after a wrong guess, and for how long.
+ * racers: [{ name, wrongs: [raceSeconds...], lockUntilMs }]. Drawn top-right.
+ */
+export function drawRacerLockouts(ctx, size, racers, raceT, lockSec) {
+  const now = performance.now();
+  const rows = [];
+  for (const r of racers || []) {
+    let left = 0;
+    for (const w of r.wrongs || []) if (raceT >= w && raceT < w + lockSec) left = Math.max(left, w + lockSec - raceT);
+    if (r.lockUntilMs > now) left = Math.max(left, (r.lockUntilMs - now) / 1000);
+    if (left > 0) rows.push(`${r.name} ✗ ${Math.ceil(left)}s`);
+  }
+  rows.forEach((t, i) => drawLabel(ctx, t, size.w - 16, 108 + i * 26, 17, '#ff8a98', 'right'));
+}
