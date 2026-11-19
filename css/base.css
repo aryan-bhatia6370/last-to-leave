@@ -713,3 +713,9 @@ a.game-card:hover, a.game-card:focus-visible {
 .final-order .perf { float: right; margin-left: 12px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text); }
 .final-order:has(.perf) { max-width: 340px; }
 .small-note { font-size: 0.8rem; max-width: 46ch; margin: -6px auto 16px; }
+.whatsnew .panel { text-align: left; max-width: 560px; }
+.wn-list { max-height: min(60vh, 520px); overflow: auto; margin: 6px 0 16px; padding-right: 4px; }
+.wn-list section + section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--panel-border); }
+.wn-list h3 { margin: 0 0 6px; font-size: 1.02rem; color: var(--text); }
+.wn-list ul { margin: 0; padding-left: 1.2em; color: var(--text-soft); line-height: 1.45; }
+.wn-list li + li { margin-top: 5px; }

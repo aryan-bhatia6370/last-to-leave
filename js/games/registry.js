@@ -17,7 +17,7 @@ export const GAMES = [
   {
     id: 'pictionary',
     rv: 2,
-    variants: [{ id: 'regular', label: 'Regular' }, { id: 'mine', label: 'With my drawings' }],
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'mine', label: 'With my drawings' }, { id: 'streak', label: 'Streak (endless)', endless: true }],
     name: 'Pictionary',
     color: 'black',
     blurb: 'Guess the bad whiteboard sketch before time runs out.',
@@ -27,7 +27,7 @@ export const GAMES = [
   {
     id: 'equations',
     rv: 2,
-    variants: [{ id: 'regular', label: 'Regular' }],
+    variants: [{ id: 'regular', label: 'Regular' }, { id: 'rush', label: 'Rush (endless)', endless: true }],
     name: 'Equations',
     color: 'blue',
     blurb: 'The board flips. Solve the problem in your head, fast.',

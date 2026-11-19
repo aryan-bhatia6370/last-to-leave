@@ -9,7 +9,7 @@ const PREF_KEY = 'ltl.boards.v1';
 function loadPrefs() { try { return { tab: 'endless', period: 'week', ...JSON.parse(localStorage.getItem(PREF_KEY)) }; } catch { return { tab: 'endless', period: 'week' }; } }
 function savePrefs(p) { try { localStorage.setItem(PREF_KEY, JSON.stringify(p)); } catch { /* fine */ } }
 
-const fmtValue = (b, v) => (b.scale ? (v / b.scale).toFixed(b.decimals ?? 1) : `${v}`);
+const fmtValue = (b, v) => (b.scale ? (v / b.scale).toFixed(b.decimals ?? 1) : `${v}`) + (b.suffix || '');
 
 export function renderLeaderboards(outlet, _params, { isCurrent }) {
   const prefs = loadPrefs();
@@ -70,7 +70,7 @@ export function renderLeaderboards(outlet, _params, { isCurrent }) {
     if (!top.length) return `<p class="lb-empty">No one yet${prefs.period === 'week' ? ' this week' : ''}. Be the first.</p>`;
     // tied values share a rank
     const rows = top.map((e) => {
-      const rank = 1 + top.filter((x) => x.value > e.value).length;
+      const rank = 1 + top.filter((x) => (b.type === 'fastest' ? x.value < e.value : x.value > e.value)).length;
       const mine = me && e.uid === me.uid;
       return `<li class="${mine ? 'me' : ''}"><span class="rank">${rank}</span><span class="who">${escapeHtml(e.username)}</span><span class="val">${fmtValue(b, e.value)}</span></li>`;
     }).join('');

@@ -4,6 +4,7 @@ import { markerSVG } from '../shared/marker.js';
 import { scores, formatScore } from '../core/scores.js';
 import { escapeHtml } from '../core/env.js';
 import { mountAccountChip } from './account.js';
+import { maybeShowWhatsNew, showWhatsNew } from '../core/whatsNew.js';
 import { accountState, onAccount } from '../core/account.js';
 
 export async function renderHome(outlet) {
@@ -67,11 +68,13 @@ export async function renderHome(outlet) {
         <div class="game-grid">${cards}</div>
       </section>
       <footer class="site-foot">
-        <a href="#/draw">Draw your own Pictionary prompts</a> · <span data-acct-note>${accountState().enabled ? 'Sign in to keep your scores on every device.' : 'Scores are saved on this device only.'}</span>
+        <a href="#/draw">Draw your own Pictionary prompts</a> · <a href="#/" data-whatsnew>What’s new</a> · <span data-acct-note>${accountState().enabled ? 'Sign in to keep your scores on every device.' : 'Scores are saved on this device only.'}</span>
       </footer>
     </main>`;
   loadHeroShot(outlet.querySelector('[data-hero]'));
   mountAccountChip(outlet.querySelector('[data-account]'));
+  outlet.querySelector('[data-whatsnew]')?.addEventListener('click', (e) => { e.preventDefault(); showWhatsNew(); });
+  maybeShowWhatsNew();
   const note = outlet.querySelector('[data-acct-note]');
   const off = onAccount((s) => {
     if (!note.isConnected) { queueMicrotask(() => off()); return; }

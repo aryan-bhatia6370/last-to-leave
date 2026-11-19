@@ -24,23 +24,38 @@ export function createPictionary(container, host) {
   // Competition Mode race: one board, computer players "solve" it at set times
   // ({ racers: [{ name, at (seconds) }] }); the first correct answer wins it.
   const compete = options.compete || null;
-  const ROUNDS = compete ? 1 : C.rounds;
+  const streak = !!options.streak && !compete; // Pictionary Streak: endless, 3 strikes
+  const ROUNDS = compete ? 1 : streak ? Infinity : C.rounds;
   const rng = createRng(seed);
-  const mine = !!options.mine;
+  const mine = !!options.mine && !streak;
   const pool = mine ? DRAWINGS.concat(loadMyDrawings()) : DRAWINGS;
   // Offline: skip drawings you've seen recently (races use the shared pick so everyone gets the same one).
   const RECENT_KEY = 'ltl.pictionary.recent.v1';
   let recent = [];
   try { recent = compete ? [] : JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { recent = []; }
   const fresh = pool.filter((d) => !recent.includes(d.answer));
-  const picks = rng.shuffle(fresh.length >= ROUNDS ? fresh : pool).slice(0, ROUNDS);
-  if (!compete) {
+  // Streak: the whole pool in a shuffled order (unseen-recently ones first)
+  const picks = streak ? [...rng.shuffle(fresh), ...rng.shuffle(pool.filter((d) => recent.includes(d.answer)))] : rng.shuffle(fresh.length >= ROUNDS ? fresh : pool).slice(0, ROUNDS);
+  if (!compete && !streak) {
     try { localStorage.setItem(RECENT_KEY, JSON.stringify([...picks.map((d) => d.answer), ...recent].slice(0, 40))); } catch { /* fine */ }
   }
-  const rounds = picks.map((d) => buildTimeline(d, toPolylines(d, rng)));
   // Offline the clock runs out a few seconds after Paul finishes the sketch.
   // Competition/online there's no clock: only a cap after the sketch is done.
-  const roundSecs = rounds.map((r) => (compete ? r.end + C.raceNewBoardSec : r.end + rng.range(C.afterDrawSec)));
+  const rounds = [];
+  const roundSecs = [];
+  function afterDraw(guessed) {
+    if (!streak) return C.afterDrawSec;
+    const cut = C.streak.shrinkPerGuess * guessed;
+    return C.afterDrawSec.map((v, i) => Math.max(C.streak.minAfterDrawSec[i], v - cut));
+  }
+  function ensureRound(i, guessed = 0) {
+    if (rounds[i]) return;
+    const d = picks[i % picks.length];
+    rounds[i] = buildTimeline(d, toPolylines(d, rng));
+    roundSecs[i] = compete ? rounds[i].end + C.raceNewBoardSec : rounds[i].end + rng.range(afterDraw(guessed));
+  }
+  if (!streak) for (let i = 0; i < ROUNDS; i++) ensureRound(i);
+  else ensureRound(0);
   const popups = createPopups();
 
   const st = {
@@ -53,6 +68,7 @@ export function createPictionary(container, host) {
     guessed: 0,
     wrong: 0,
     guessTimes: [],
+    strikes: 0,
     clock: null, // set when each round starts
     lockUntil: 0, // Competition/online: after a wrong guess you wait a few seconds
     flash: 0,
@@ -127,6 +143,7 @@ export function createPictionary(container, host) {
     if (compete && !won && !st.raceWinner && why === "Time's up!") why = 'Nobody got it. New drawing!';
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.guessed++;
+    else if (streak) st.strikes++;
     st.drawT = rounds[st.round].end + 1; // finish the sketch
     bar.setEnabled(false);
     bar.clear();
@@ -165,7 +182,7 @@ export function createPictionary(container, host) {
       case 'erase':
         if (k >= 1) {
           st.round++;
-          if (st.round >= ROUNDS) setPhase('done', 0.2);
+          if (streak ? st.strikes >= C.streak.strikes : st.round >= ROUNDS) setPhase('done', 0.2);
           else startRound();
         }
         break;
@@ -175,10 +192,10 @@ export function createPictionary(container, host) {
           const avg = st.guessTimes.length ? st.guessTimes.reduce((a, b) => a + b, 0) / st.guessTimes.length : null;
           onFinish?.({
             gameId: 'pictionary',
-            variant: mine ? 'mine' : 'regular',
+            variant: streak ? 'streak' : mine ? 'mine' : 'regular',
             score: st.guessed,
-            maxScore: ROUNDS,
-            passed: st.guessed >= C.passScore,
+            maxScore: streak ? null : ROUNDS,
+            passed: st.guessed >= (streak ? C.streak.passScore : C.passScore),
             durationMs: Math.round(st.activeSec * 1000),
             stats: {
               winner: st.raceWinner ?? null,
@@ -186,7 +203,7 @@ export function createPictionary(container, host) {
               guessed: st.guessed,
               wrong: st.wrong,
               avgSeconds: avg == null ? null : Number(avg.toFixed(1)),
-              drawings: picks.map((d) => d.answer).join(','),
+              drawings: streak ? null : picks.map((d) => d.answer).join(','),
             },
             seed: rng.seed,
           });
@@ -196,6 +213,7 @@ export function createPictionary(container, host) {
   }
 
   function startRound() {
+    ensureRound(st.round, st.guessed);
     st.drawT = 0;
     st.clock = createRoundClock(roundSecs[st.round]);
     st.lockUntil = 0;
@@ -274,7 +292,12 @@ export function createPictionary(container, host) {
     bs.render();
     ctx.clearRect(0, 0, size.w, size.h);
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
-    else drawRounds(ctx, size, 'GUESSED', st.guessed, ROUNDS, st.results, st.round);
+    else if (streak) {
+      drawLabel(ctx, 'STREAK · GUESSED', 16, 26, 15, '#5b5b66');
+      drawLabel(ctx, `${st.guessed}`, 16, 70, 44, '#1f1f22');
+      const n = C.streak.strikes;
+      for (let i = 0; i < n; i++) drawLabel(ctx, i < st.strikes ? '✗' : '○', 16 + i * 30, 104, 26, i < st.strikes ? BAD : '#9a9aa6');
+    } else drawRounds(ctx, size, 'GUESSED', st.guessed, ROUNDS, st.results, st.round);
     if (!compete && st.clock && (st.phase === 'draw' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, st.clock.total, st.flash);
     if (compete && st.phase === 'draw' && st.lockUntil) drawLabel(ctx, `Wait ${Math.ceil(st.lockUntil - st.raceT)}…`, size.w / 2, size.h * 0.16, 30, BAD, 'center');
     popups.draw(ctx);

@@ -28,7 +28,8 @@ export const LEADERBOARD = {
 };
 
 export const CATEGORIES = [
-  { id: 'endless', label: 'Endless', boards: ['endless-catch', 'endless-bullet', 'endless-cup'] },
+  { id: 'endless', label: 'Endless', boards: ['endless-catch', 'endless-bullet', 'endless-cup', 'endless-rush', 'endless-streak'] },
+  { id: 'fastest', label: 'Fastest', boards: ['fast-equations', 'fast-pictionary'] },
   { id: 'competition', label: 'Competition', boards: ['comp-wins', 'comp-wins-offline', 'comp-wins-online', 'comp-performance'] },
   { id: 'minigame', label: 'Minigames', boards: ['mini-wins', 'mini-wins-offline', 'mini-wins-online'] },
 ];
@@ -37,6 +38,10 @@ export const BOARDS = {
   'endless-catch': { v: 2, label: 'Endless Marker Catching', note: 'Best run', type: 'best', game: 'marker-catching', variant: 'endless', unit: 'caught' },
   'endless-bullet': { v: 2, label: 'Endless Bullet', note: 'Marker Catching, Bullet + Endless', type: 'best', game: 'marker-catching', variant: 'bullet-endless', unit: 'caught' },
   'endless-cup': { v: 2, label: 'Endless Cup Catching', note: 'Best run', type: 'best', game: 'cup-catching', variant: 'endless', unit: 'caught' },
+  'endless-rush': { label: 'Equations Rush', note: 'Most problems solved in one run', type: 'best', game: 'equations', variant: 'rush', unit: 'solved' },
+  'endless-streak': { label: 'Pictionary Streak', note: 'Most drawings guessed before 3 strikes', type: 'best', game: 'pictionary', variant: 'streak', unit: 'guessed' },
+  'fast-equations': { label: 'Fastest Equations', note: 'Best average time in a game where you solved all 3', type: 'fastest', game: 'equations', scale: 10, decimals: 1, suffix: 's' },
+  'fast-pictionary': { label: 'Fastest Pictionary', note: 'Best average time in a game where you guessed all 3 (built-in drawings)', type: 'fastest', game: 'pictionary', scale: 10, decimals: 1, suffix: 's' },
   'comp-wins': { label: 'Total wins', note: 'Offline + online', type: 'count', unit: 'wins' },
   'comp-wins-offline': { label: 'Offline wins', note: '3+ players at the table (you + 2 computers or more)', type: 'count', unit: 'wins' },
   'comp-wins-online': { label: 'Online wins', note: 'Online rooms with 3+ real players', type: 'count', unit: 'wins' },
@@ -74,14 +79,16 @@ async function addWin(kinds) {
   await batch.commit();
 }
 
+/** Best score: higher wins, except 'fastest' boards (lower time wins). */
 async function submitBest(kind, value, periods) {
+  const lower = BOARDS[kind]?.type === 'fastest';
   const h = signedInHandles();
   if (!h || DEBUG) return;
   const { db, F, uid, username } = h;
   for (const period of periods) {
     const ref = F.doc(db, 'boards', boardId(period, kind), 'entries', uid);
     const cur = await F.getDoc(ref);
-    if (cur.exists() && cur.data().value >= value) continue;
+    if (cur.exists() && (lower ? cur.data().value <= value : cur.data().value >= value)) continue;
     await F.setDoc(ref, { uid, username, value, updatedAt: F.serverTimestamp() });
   }
 }
@@ -118,6 +125,11 @@ onScoreSaved((record) => {
     return;
   }
   if (record.passed) addWin(['mini-wins', 'mini-wins-offline']).catch(warn('minigame win'));
+  // Fastest solver: a full regular game with every round solved
+  const fast = Object.keys(BOARDS).find((k) => BOARDS[k].type === 'fastest' && BOARDS[k].game === record.gameId);
+  if (fast && record.variant === 'regular' && record.score === record.maxScore && record.stats?.avgSeconds != null) {
+    submitBest(fast, Math.max(5, Math.round(record.stats.avgSeconds * 10)), ['all', weekKey()]).catch(warn('fastest'));
+  }
   const kind = endlessKind(record.gameId, record.variant);
   if (kind) submitBest(kind, record.score, ['all', weekKey()]).catch(warn('endless best'));
 });
@@ -147,7 +159,8 @@ export async function fetchBoard(kind, period = 'all', limit = LEADERBOARD.showT
   const { db, F } = await loadFirebase();
   const id = boardId(period === 'week' ? weekKey() : 'all', kind);
   const coll = F.collection(db, 'boards', id, 'entries');
-  const snap = await F.getDocs(F.query(coll, F.orderBy('value', 'desc'), F.limit(limit)));
+  const asc = BOARDS[kind]?.type === 'fastest';
+  const snap = await F.getDocs(F.query(coll, F.orderBy('value', asc ? 'asc' : 'desc'), F.limit(limit)));
   const top = [];
   snap.forEach((d) => top.push(d.data()));
   let me = null;
@@ -159,7 +172,7 @@ export async function fetchBoard(kind, period = 'all', limit = LEADERBOARD.showT
     } else {
       const own = await F.getDoc(F.doc(db, 'boards', id, 'entries', h.uid));
       if (own.exists()) {
-        const above = await F.getCountFromServer(F.query(coll, F.where('value', '>', own.data().value)));
+        const above = await F.getCountFromServer(F.query(coll, F.where('value', asc ? '<' : '>', own.data().value)));
         me = { ...own.data(), rank: above.data().count + 1 };
       }
     }

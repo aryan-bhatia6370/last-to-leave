@@ -187,6 +187,22 @@ export function makeProblems(rng, count, weights) {
   return out;
 }
 
+/** One problem (Rush): picks a tier by weight, never the same template twice in a row. Returns { p, key }. */
+export function makeProblem(rng, weights, avoidKey = null) {
+  for (let i = 0; i < 50; i++) {
+    const tier = rng.weighted(weights);
+    const list = TIERS[tier];
+    const idx = rng.int(0, list.length - 1);
+    const key = `${tier}:${idx}`;
+    if (key === avoidKey) continue;
+    const p = list[idx](rng);
+    p.tier = tier;
+    p.reveal = p.reveal || show(p.answer);
+    return { p, key };
+  }
+  return makeProblem(rng, { common: 1 });
+}
+
 /** Parse a typed answer into a number. Accepts 12, -3, 7/4, 1.75, "x = 9", "65°", "25π". */
 export function parseAnswer(input) {
   let s = String(input).toLowerCase().trim();

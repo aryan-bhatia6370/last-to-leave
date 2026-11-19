@@ -68,9 +68,10 @@ service cloud.firestore {
     function boardKind(board) { return board.split('~')[1]; }
     function isEndless(board) { return boardKind(board).matches('^(endless-.*|comp-performance)$'); }
     function cap(board) { return boardKind(board) == 'comp-performance' ? 1000 : 5000; }
+    function isFastest(board) { return boardKind(board).matches('^fast-.*'); }
     function validEntry(board, uid) {
       return isOwner(uid)
-        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})([.]v[0-9]+)?~(endless-catch|endless-bullet|endless-cup|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
+        && board.matches('^(all|w[0-9]{4}-[0-9]{2}-[0-9]{2})([.]v[0-9]+)?~(endless-catch|endless-bullet|endless-cup|endless-rush|endless-streak|fast-equations|fast-pictionary|comp-performance|comp-wins|comp-wins-offline|comp-wins-online|mini-wins|mini-wins-offline|mini-wins-online)$')
         && request.resource.data.keys().hasOnly(['uid', 'username', 'value', 'updatedAt'])
         && request.resource.data.uid == uid
         && request.resource.data.username == get(userPath(uid)).data.username
@@ -79,14 +80,19 @@ service cloud.firestore {
     }
     match /boards/{board}/entries/{uid} {
       allow read: if true;
+      // fastest boards: tenths of a second, lower is better (0.5 s to 60 s)
       allow create: if validEntry(board, uid)
-        && (isEndless(board)
-          ? request.resource.data.value >= 0 && request.resource.data.value <= cap(board)
-          : request.resource.data.value == 1);
+        && (isFastest(board)
+          ? request.resource.data.value >= 5 && request.resource.data.value <= 600
+          : (isEndless(board)
+            ? request.resource.data.value >= 0 && request.resource.data.value <= cap(board)
+            : request.resource.data.value == 1));
       allow update: if validEntry(board, uid)
-        && (isEndless(board)
-          ? request.resource.data.value > resource.data.value && request.resource.data.value <= cap(board)
-          : request.resource.data.value == resource.data.value + 1);
+        && (isFastest(board)
+          ? request.resource.data.value < resource.data.value && request.resource.data.value >= 5
+          : (isEndless(board)
+            ? request.resource.data.value > resource.data.value && request.resource.data.value <= cap(board)
+            : request.resource.data.value == resource.data.value + 1));
       allow delete: if false;
     }
 

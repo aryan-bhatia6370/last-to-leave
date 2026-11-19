@@ -3,7 +3,7 @@
 // Type the answer before time runs out; wrong answers cost time. 3 rounds.
 
 import { CONFIG } from './config.js';
-import { makeProblems, isCorrect } from './problems.js';
+import { makeProblems, makeProblem, isCorrect } from './problems.js';
 import { createRng } from '../../core/rng.js';
 import { createCanvas } from '../../core/canvas.js';
 import { startLoop } from '../../shared/gameLoop.js';
@@ -23,9 +23,16 @@ export function createEquations(container, host) {
   // Competition Mode race: one board, computer players "solve" it at set times
   // ({ racers: [{ name, at (seconds) }] }); the first correct answer wins it.
   const compete = options.compete || null;
-  const ROUNDS = compete ? 1 : C.rounds;
+  // Equations Rush: endless, harder and quicker as you go; one miss ends it.
+  const rush = !!options.rush && !compete;
+  const R = C.rush;
+  const ROUNDS = compete ? 1 : rush ? Infinity : C.rounds;
   const rng = createRng(seed);
-  const problems = makeProblems(rng, ROUNDS, C.tierWeights);
+  const rushWeights = (n) => R.levels.find((l) => n >= l.from).weights;
+  const rushSecs = (n) => clamp(R.startSeconds + R.secondsPerSolve * n, R.minSeconds, R.startSeconds);
+  let lastKey = null;
+  function nextRushProblem(n) { const { p, key } = makeProblem(rng, rushWeights(n), lastKey); lastKey = key; return p; }
+  const problems = rush ? [nextRushProblem(0)] : makeProblems(rng, ROUNDS, C.tierWeights);
   const popups = createPopups();
 
   const st = {
@@ -38,7 +45,8 @@ export function createEquations(container, host) {
     wrong: 0,
     solveTimes: [],
     // offline: a 20 s clock. Competition/online: no clock (just a cap before a new problem)
-    clock: createRoundClock(compete ? C.raceNewBoardSec : C.roundSeconds),
+    clock: createRoundClock(compete ? C.raceNewBoardSec : rush ? rushSecs(0) : C.roundSeconds),
+    rushOver: false,
     lockUntil: 0, // Competition/online: after a wrong answer you wait a few seconds
     flash: 0,
     lastGuess: '',
@@ -70,7 +78,7 @@ export function createEquations(container, host) {
     if (st.phase !== 'solve') return;
     const p = problems[st.round];
     if (isCorrect(text, p.answer)) {
-      st.solveTimes.push(C.roundSeconds - st.clock.left);
+      st.solveTimes.push(st.clock.total - st.clock.left);
       st.raceWinner = 'you';
       endRound(true);
     } else {
@@ -84,6 +92,7 @@ export function createEquations(container, host) {
         popups.add(`Nope! Wait ${C.raceLockoutSec}s`, size.w / 2, size.h * 0.24, BAD, 30);
         return;
       }
+      if (rush) { endRound(false, 'Wrong! Run over.'); return; }
       st.clock.penalize(C.wrongPenaltySec);
       popups.add(`Nope! −${C.wrongPenaltySec}s`, size.w / 2, size.h * 0.24, BAD, 30);
       if (st.clock.expired) endRound(false, "Time's up!");
@@ -94,6 +103,7 @@ export function createEquations(container, host) {
     if (compete && !won && !st.raceWinner && why === "Time's up!") why = 'Nobody got it. New problem!';
     st.results[st.round] = won ? 'win' : 'lose';
     if (won) st.solved++;
+    if (rush && !won) st.rushOver = true;
     bar.setEnabled(false);
     bar.clear();
     popups.add(won ? 'Correct!' : why, size.w / 2, size.h * 0.24, won ? GOOD : BAD, 40, 1.4);
@@ -138,10 +148,11 @@ export function createEquations(container, host) {
       case 'flipOut':
         if (k >= 1) {
           st.round++;
-          if (st.round >= ROUNDS) {
+          if (rush ? st.rushOver : st.round >= ROUNDS) {
             setPhase('done', 0.2);
           } else {
-            st.clock = createRoundClock(C.roundSeconds);
+            if (rush) problems.push(nextRushProblem(st.solved));
+            st.clock = createRoundClock(rush ? rushSecs(st.solved) : C.roundSeconds);
             setPhase('flipIn', C.flipMs / 1000);
           }
         }
@@ -152,10 +163,10 @@ export function createEquations(container, host) {
           const avg = st.solveTimes.length ? st.solveTimes.reduce((a, b) => a + b, 0) / st.solveTimes.length : null;
           onFinish?.({
             gameId: 'equations',
-            variant: 'regular',
+            variant: rush ? 'rush' : 'regular',
             score: st.solved,
-            maxScore: ROUNDS,
-            passed: st.solved >= C.passScore,
+            maxScore: rush ? null : ROUNDS,
+            passed: st.solved >= (rush ? R.passScore : C.passScore),
             durationMs: Math.round(st.activeSec * 1000),
             stats: {
               winner: st.raceWinner ?? null,
@@ -163,7 +174,7 @@ export function createEquations(container, host) {
               solved: st.solved,
               wrong: st.wrong,
               avgSeconds: avg == null ? null : Number(avg.toFixed(1)),
-              tiers: problems.map((p) => p.tier).join(','),
+              tiers: rush ? null : problems.map((p) => p.tier).join(','),
             },
             seed: rng.seed,
           });
@@ -226,8 +237,11 @@ export function createEquations(container, host) {
     ctx.clearRect(0, 0, size.w, size.h);
     const p = problems[Math.min(st.round, problems.length - 1)];
     if (compete) drawLabel(ctx, `Race vs ${compete.racers.map((r) => r.name).join(', ')}`, 16, 34, 20, '#1f1f22');
-    else drawRounds(ctx, size, 'SOLVED', st.solved, ROUNDS, st.results, st.round);
-    if (!compete && (st.phase === 'solve' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, C.roundSeconds, st.flash);
+    else if (rush) {
+      drawLabel(ctx, 'RUSH · SOLVED', 16, 26, 15, '#5b5b66');
+      drawLabel(ctx, `${st.solved}`, 16, 70, 44, '#1f1f22');
+    } else drawRounds(ctx, size, 'SOLVED', st.solved, ROUNDS, st.results, st.round);
+    if (!compete && (st.phase === 'solve' || st.phase === 'reveal')) drawClock(ctx, size, st.clock.left, st.clock.total, st.flash);
     if (compete && st.phase === 'solve' && st.lockUntil) {
       drawLabel(ctx, `Wait ${Math.ceil(st.lockUntil - st.raceT)}…`, size.w / 2, size.h * 0.16, 30, BAD, 'center');
     }

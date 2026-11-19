@@ -38,7 +38,7 @@ export function competitionGames() {
     id: g.id,
     name: g.name,
     color: g.color,
-    variants: g.variants.filter((v) => !v.id.includes('endless') && v.id !== 'mine'),
+    variants: g.variants.filter((v) => !v.endless && !v.id.includes('endless') && v.id !== 'mine'),
   }));
 }
 

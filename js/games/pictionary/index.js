@@ -19,6 +19,7 @@ export default {
   ],
   options: [
     { id: 'mine', label: 'My drawings', desc: 'Mix in drawings you made on this device with the drawing board.' },
+    { id: 'streak', label: 'Streak', desc: `Endless: drawings keep coming and the time gets tighter. Miss ${CONFIG.streak.strikes} and it's over. (Built-in drawings only.)` },
   ],
   variants: GAMES.find((g) => g.id === 'pictionary').variants,
   statLabels: [
@@ -26,6 +27,6 @@ export default {
     ['wrong', 'Wrong guesses'],
     ['avgSeconds', 'Avg seconds to guess'],
   ],
-  variant(opts) { return opts.mine ? 'mine' : 'regular'; },
+  variant(opts) { return opts.streak ? 'streak' : opts.mine ? 'mine' : 'regular'; },
   create: createPictionary,
 };

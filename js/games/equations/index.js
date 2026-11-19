@@ -17,13 +17,15 @@ export default {
     'Mostly mental math with exponents and fractions. Algebra fairly often, geometry sometimes. Rarely a super quick one… or calculus.',
     `Solve ${CONFIG.passScore} of ${CONFIG.rounds} to survive.`,
   ],
-  options: [],
+  options: [
+    { id: 'rush', label: 'Rush', desc: `Endless: problems keep coming and get harder, and the clock shrinks from ${CONFIG.rush.startSeconds}s to ${CONFIG.rush.minSeconds}s. One wrong answer or time-out ends it.` },
+  ],
   variants: GAMES.find((g) => g.id === 'equations').variants,
   statLabels: [
     ['solved', 'Solved'],
     ['wrong', 'Wrong guesses'],
     ['avgSeconds', 'Avg seconds to solve'],
   ],
-  variant() { return 'regular'; },
+  variant(opts) { return opts.rush ? 'rush' : 'regular'; },
   create: createEquations,
 };
