@@ -20,7 +20,7 @@ export const CONFIG = {
   world: {
     eyeHeight: 1.15,
     fovYDeg: 62,
-    throwerZ: [5.0, 6.2],
+    throwerZ: [3.4, 4.4],   // close enough that lobs drop into the cup instead of skimming at it
     backWallZ: 7.5,
   },
 
@@ -31,7 +31,7 @@ export const CONFIG = {
     rimRadius: 0.068,
     bottomRadius: 0.047,
     height: 0.12,
-    inRadius: 0.06,        // marker center within this of the middle as it drops past the rim = in
+    inRadius: 0.07,        // marker center within this of the middle as it drops past the rim = in
     rimZone: 0.028,        // just outside the rim: bounces off the rim, might rattle in
     rattleInChance: 0.4,   // best-case chance a rim hit drops in
     crowdShrink: 0.45,     // a full cup's opening is this much smaller (markers already in the way)
@@ -55,7 +55,7 @@ export const CONFIG = {
   // Throws: like Marker Catching, but lobbed higher so they come down into the cup.
   throws: {
     flightTimeSec: [0.95, 1.35],
-    arcHeightM: [0.45, 0.9],
+    arcHeightM: [0.9, 1.4], // high lobs: markers come down at ~50–60°, not flat
     windupMs: [380, 520],
     gapMs: [500, 1000],
     targetSpreadX: 0.75,   // how far from center throws can land (0..1 of the screen)
