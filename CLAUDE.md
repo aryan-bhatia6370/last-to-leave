@@ -20,7 +20,7 @@
 | 4 | Archery | Foam Nevada (green, large), Wyoming (purple, medium), Connecticut (red, small) thrown at a handheld classroom whiteboard that **Paul holds up**, somewhere new and sometimes angled every throw; Wind toggle | 2 ✅ (Paul added in 6) |
 | 5 | Bowling | Yellow-black eraser vs 3 standing markers (unique colors per game), 3 throws, max 9; Wind toggle; Hard mode (black=1, orange=2, purple=3 in separate spots; one throw scores at most 3); Hard and Wind combine | 3 ✅ |
 | 6 | Paul's Pocket | Pick 1 of 8 markers off the bench; Paul's hand (Caucasian, khaki trousers, arms/legs only) scoops them into his pocket, scrambles, pulls one out; 1-in-8 luck | 6 ✅ |
-| 7 | Cup Catching | Hold a red solo cup (follows mouse/finger) and catch lobbed markers through the top; rim bounces; whipping the cup sloshes markers out; Endless (ends on 3 misses in a row or a spill; cup gets crowded); no Bullet | 4 ✅ |
+| 7 | Cup Catching | Hold a red solo cup at waist height (follows mouse/finger; up/down moves it farther from / closer to your body, 0.5–2 m) and catch lobbed markers through the top; Paul always aims inside that reach; rim bounces; whipping the cup sloshes markers out; Endless (ends on 3 misses in a row or a spill; cup gets crowded); no Bullet | 4 ✅ |
 | 8 | Cup Throwing | Throw all 8 markers into a standing cup; fixed cup or moving cup; thrown markers stay where they land; hardest game (~3/8 avg); **Paul holds the cup** at his hip (`cup.heldByPaul` in config; false = cup on the floor) | 3 ✅ |
 
 ## The real setting (use this for theming)

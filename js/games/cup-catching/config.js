@@ -20,11 +20,17 @@ export const CONFIG = {
   world: {
     eyeHeight: 1.15,
     fovYDeg: 62,
-    throwerZ: [3.4, 4.4],   // close enough that lobs drop into the cup instead of skimming at it
+    throwerZ: [3.6, 4.6],   // close enough that lobs drop down into the cup
     backWallZ: 7.5,
   },
 
-  cupDepth: 0.95,          // how far in front of you you hold the cup
+  // You hold the cup at hand height and move it around on a level plane:
+  // mouse/finger left-right = left-right, up-down = farther from / closer to your body.
+  hold: {
+    rimY: -0.22,           // rim height relative to your eyes (about waist height)
+    reachZ: [0.5, 2.0],    // closest (against your body) to farthest (arm out) the cup can go
+    startZ: 0.95,
+  },
 
   // A 16 oz red solo cup.
   cup: {
@@ -58,8 +64,8 @@ export const CONFIG = {
     arcHeightM: [0.9, 1.4], // high lobs: markers come down at ~50–60°, not flat
     windupMs: [380, 520],
     gapMs: [500, 1000],
-    targetSpreadX: 0.75,   // how far from center throws can land (0..1 of the screen)
-    targetSpreadY: 0.6,
+    targetZ: [0.6, 1.8],   // where throws come down (distance from you), always inside your reach
+    targetSpreadX: 0.75,   // how far left/right throws can land (0..1 of the reachable width)
     throwerSpreadX: 0.8,
     spinRadPerSec: [4, 12],
     styles: { overhand: 0.35, sidearm: 0.25, underhand: 0.4 },

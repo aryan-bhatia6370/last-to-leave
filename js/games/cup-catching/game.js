@@ -65,7 +65,7 @@ export function createCupCatching(container, host) {
     shot: null,
     inCup: [], // { color, a, lean, off, anim, from }
     debris: [], // spilled markers falling away
-    cup: { rim: [0, -0.3, C.cupDepth], vel: [0, 0], axis: [0, 1, 0], wobble: 0 },
+    cup: { rim: [0, C.hold.rimY, C.hold.startZ], vel: [0, 0], axis: [0, 1, 0], wobble: 0 }, // vel = [x, z] m/s
     pointer: null,
     spilledOver: false,
     finished: false,
@@ -93,7 +93,7 @@ export function createCupCatching(container, host) {
 
   function onResize(size) {
     cam = createCamera(size, { fovYDeg: W.fovYDeg, cyFrac: 0.42 });
-    if (!st.pointer) st.cup.rim = cam.unproject(cam.W / 2, cam.H * 0.72, C.cupDepth);
+    if (!st.pointer) st.cup.rim = [0, C.hold.rimY, C.hold.startZ];
   }
 
   function setPhase(phase, durSec = 0) {
@@ -106,22 +106,24 @@ export function createCupCatching(container, host) {
   const styleHand = (style, key) => Thrower.styleHand(st.thrower, style, key);
 
   // ---------- the cup ----------
-  function cupLimits() {
-    const m = Math.max(40, Math.min(cam.W, cam.H) * 0.08);
-    return { x0: m, x1: cam.W - m, y0: cam.H * 0.28, y1: cam.H - m * 0.9 };
+  /** The point on the hand-height plane under a screen point, kept inside your reach. */
+  function cupPointAt(sx, sy) {
+    const Y = C.hold.rimY;
+    const [z0, z1] = C.hold.reachZ;
+    const below = sy - cam.cy; // pixels below the horizon
+    const z = clamp(below > 0 ? (-Y * cam.f) / below : z1, z0, z1);
+    const halfW = cam.halfWidthAt(z) * 0.85;
+    return [clamp(((sx - cam.cx) * z) / cam.f, -halfW, halfW), Y, z];
   }
 
   function updateCup(dt) {
     const c = st.cup;
     if (st.pointer) {
-      const L = cupLimits();
       const off = st.pointer.type === 'touch' ? C.follow.touchOffsetPx : 0;
-      const sx = clamp(st.pointer.x, L.x0, L.x1);
-      const sy = clamp(st.pointer.y - off, L.y0, L.y1);
-      const target = cam.unproject(sx, sy, C.cupDepth);
+      const target = cupPointAt(st.pointer.x, st.pointer.y - off);
       const k = 1 - Math.exp(-C.follow.smoothing * dt);
       const next = lerp3(c.rim, target, k);
-      const v = [(next[0] - c.rim[0]) / dt, (next[1] - c.rim[1]) / dt];
+      const v = [(next[0] - c.rim[0]) / dt, (next[2] - c.rim[2]) / dt];
       c.vel = [lerp(c.vel[0], v[0], 0.5), lerp(c.vel[1], v[1], 0.5)];
       c.rim = next;
     } else {
@@ -205,14 +207,11 @@ export function createCupCatching(container, host) {
     setPhase('gap', rng.range(P.gapMs) / 1000 / st.speed);
   }
 
-  /** Where the throw is aimed: the ideal spot for the cup's rim, at the cup's depth. */
+  /** Where the throw is aimed: the ideal spot for the cup's rim, somewhere inside your reach. */
   function targetPoint(u, v) {
-    const L = cupLimits();
-    const cx = (L.x0 + L.x1) / 2;
-    const cy = lerp(L.y0, L.y1, 0.55);
-    const sx = cx + u * P.targetSpreadX * (L.x1 - L.x0) / 2;
-    const sy = cy + v * P.targetSpreadY * (L.y1 - L.y0) / 2;
-    return cam.unproject(sx, sy, C.cupDepth);
+    const z = lerp(P.targetZ[0], P.targetZ[1], (v + 1) / 2);
+    const x = u * P.targetSpreadX * cam.halfWidthAt(z) * 0.85;
+    return [x, C.hold.rimY, z];
   }
 
   function release() {
